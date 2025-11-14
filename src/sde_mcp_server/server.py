@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 from dotenv import load_dotenv
@@ -30,7 +31,6 @@ from mcp.types import (
 from pydantic import BaseModel, ValidationError
 
 from .api_client import SDElementsAPIClient, SDElementsAPIError, SDElementsAuthError, SDElementsNotFoundError
-
 # Load environment variables
 load_dotenv()
 
@@ -356,6 +356,36 @@ async def list_tools() -> List[Tool]:
                     }
                 },
                 "required": ["project_id"]
+            }
+        ),
+        Tool(
+            name="create_project_from_code",
+            description="Create application and project in SD Elements based on code context. Returns the project survey structure with all available questions and answers. The AI should review the available survey options and use its knowledge to determine appropriate answers based on the project description/context, then call set_project_survey_by_text separately. This tool does NOT use static code analysis - the AI determines answers from the available survey options.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "application_name": {
+                        "type": "string",
+                        "description": "Name of the application to create (or use existing application_id)"
+                    },
+                    "application_id": {
+                        "type": "integer",
+                        "description": "ID of existing application (optional, will create new if not provided and application_name is provided)"
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "description": "Name of the project to create"
+                    },
+                    "project_description": {
+                        "type": "string",
+                        "description": "Description of the project (optional)"
+                    },
+                    "code_context": {
+                        "type": "string",
+                        "description": "Text description of the project/technologies (optional). This is provided for AI context only - the AI will determine survey answers from available options, not from static analysis."
+                    }
+                },
+                "required": ["project_name"]
             }
         ),
         
@@ -1106,6 +1136,182 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         elif name == "commit_survey_draft":
             project_id = arguments["project_id"]
             result = api_client.commit_survey_draft(project_id)
+        
+        elif name == "create_project_from_code":
+            """
+            End-to-end workflow to create an SD Elements project.
+            
+            This tool performs the following steps:
+            1. Creates or uses an existing application
+            2. Creates a new project in the application
+            3. Gets the project survey structure with all available questions and answers
+            4. Checks the survey draft state to see if answers are selected
+            5. Commits the survey draft only if answers are selected (to publish and generate countermeasures)
+            
+            IMPORTANT: This tool does NOT automatically set survey answers.
+            The AI client should:
+            1. Review the returned survey structure (all available questions and answers)
+            2. Use its AI knowledge along with the optional code_context to determine appropriate survey answers
+            3. Call add_survey_answers_by_text or set_project_survey_by_text to set answers based on code_context
+            4. The survey draft will be automatically committed only if answers are already selected
+            
+            This approach allows the AI to make intelligent decisions by reviewing all available
+            survey options rather than relying on hardcoded pattern matching.
+            
+            Note: The survey draft is only committed if answers are already selected (e.g., from
+            application template or previous API calls). If no answers are selected, the AI should
+            set them first using the survey management tools, then commit the draft.
+            """
+            try:
+                # Optional context provided by user (for AI reference only, not analyzed)
+                code_context = arguments.get("code_context", "")
+                
+                # Step 1: Create or get application
+                # Applications are containers for related projects in SD Elements
+                application_id = arguments.get("application_id")
+                app_result = None
+                
+                if not application_id:
+                    # No application ID provided, so we need to create a new application
+                    application_name = arguments.get("application_name")
+                    if application_name:
+                        # Create new application with the provided name
+                        app_data = {"name": application_name}
+                        # Add description if provided
+                        if "application_description" in arguments:
+                            app_data["description"] = arguments["application_description"]
+                        
+                        # Create the application via API
+                        app_result = api_client.create_application(app_data)
+                        application_id = app_result.get("id")
+                    else:
+                        # Neither application_id nor application_name provided
+                        result = {
+                            "error": "Either application_id or application_name must be provided"
+                        }
+                        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+                # If application_id was provided, we use the existing application
+                
+                # Step 2: Create project in the application
+                # Projects represent individual software components or services
+                project_data = {
+                    "name": arguments["project_name"],  # Required parameter
+                    "application": application_id  # Link to the application
+                }
+                # Add project description if provided
+                if "project_description" in arguments:
+                    project_data["description"] = arguments["project_description"]
+                
+                # Create the project via API
+                project_result = api_client.create_project(project_data)
+                project_id = project_result.get("id")
+                
+                # Step 3: Get the project survey structure with all available questions and answers
+                # This provides the AI with all possible survey options to choose from
+                survey_structure = api_client.get_project_survey(project_id)
+                
+                # Extract a summary of available answers for easier AI review
+                # The AI can use this to understand what options are available
+                available_answers_summary = []
+                for section in survey_structure.get('sections', []):
+                    section_title = section.get('title', 'Untitled Section')
+                    for question in section.get('questions', []):
+                        question_text = question.get('text', 'Untitled Question')
+                        for answer in question.get('answers', []):
+                            available_answers_summary.append({
+                                'id': answer.get('id'),
+                                'text': answer.get('text', ''),
+                                'question': question_text,
+                                'section': section_title
+                            })
+                
+                # Step 4: Check survey draft state to see if answers are selected
+                # Get the survey draft to check what answers are currently selected
+                draft_state = None
+                selected_answers_count = 0
+                try:
+                    draft_state = api_client.get(f'projects/{project_id}/survey/draft/')
+                    # Count selected answers in the draft
+                    selected_answers = [a for a in draft_state.get('answers', []) if a.get('selected', False)]
+                    selected_answers_count = len(selected_answers)
+                except Exception as draft_error:
+                    # If we can't get draft state, we'll still try to commit
+                    draft_state = {"error": str(draft_error)}
+                
+                # Step 5: Commit the survey draft to publish it and generate countermeasures
+                # Only commit if there are selected answers, otherwise inform the user
+                commit_result = None
+                commit_success = False
+                commit_skipped = False
+                
+                if selected_answers_count > 0:
+                    # Answers are selected, proceed with commit
+                    try:
+                        commit_result = api_client.commit_survey_draft(project_id)
+                        commit_success = True
+                    except Exception as commit_error:
+                        # If commit fails, log it but don't fail the entire operation
+                        commit_result = {
+                            "error": str(commit_error),
+                            "note": "Survey draft commit failed, but project was created successfully"
+                        }
+                else:
+                    # No answers selected, skip commit and inform user
+                    commit_skipped = True
+                    commit_result = {
+                        "note": "Survey draft not committed because no answers are selected",
+                        "action_required": "Use add_survey_answers_by_text or set_project_survey_by_text to set answers, then call commit_survey_draft"
+                    }
+                
+                # Build comprehensive result object with all workflow details
+                result = {
+                    "success": True,
+                    # Project context (optional, provided by user for AI reference)
+                    "project_context": code_context if code_context else None,
+                    # Application information
+                    "application": {
+                        "id": application_id,
+                        "name": app_result.get("name") if app_result else "existing"
+                    },
+                    # Project information
+                    "project": {
+                        "id": project_id,
+                        "name": project_result.get("name"),
+                        "url": project_result.get("url")  # Direct link to project in SD Elements
+                    },
+                    # Survey structure: All available questions and answers
+                    "survey_structure": {
+                        "note": "This contains all available survey questions and answers. Review these options and use your AI knowledge to determine which answers are appropriate for this project.",
+                        "total_questions": len([q for s in survey_structure.get('sections', []) for q in s.get('questions', [])]),
+                        "total_answers": len(available_answers_summary),
+                        "available_answers": available_answers_summary[:100],  # Limit to first 100 for readability
+                        "full_survey": survey_structure  # Complete survey structure if needed
+                    },
+                    # Survey draft state
+                    "survey_draft_state": {
+                        "selected_answers_count": selected_answers_count,
+                        "has_answers": selected_answers_count > 0,
+                        "draft_available": draft_state is not None and "error" not in draft_state
+                    },
+                    # Survey draft commit status
+                    "survey_committed": commit_success,
+                    "survey_commit_skipped": commit_skipped,
+                    "survey_commit_result": commit_result,
+                    # Next steps for AI client
+                    "next_steps": {
+                        "step_1": f"Survey draft checked: {selected_answers_count} answer(s) currently selected",
+                        "step_2": f"Survey draft has been {'committed successfully' if commit_success else 'skipped (no answers)' if commit_skipped else 'attempted to commit'}",
+                        "step_3": f"Countermeasures will be {'generated' if commit_success else 'generated after answers are set and draft is committed' if commit_skipped else 'generated after manual commit'}",
+                        "step_4": "If no answers were set, use add_survey_answers_by_text or set_project_survey_by_text to set answers based on code_context, then call commit_survey_draft"
+                    }
+                }
+            except Exception as e:
+                # Handle any errors that occur during the workflow
+                # Return error information for debugging
+                result = {
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
             
         # Application tools
         elif name == "list_applications":
