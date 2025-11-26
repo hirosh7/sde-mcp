@@ -80,6 +80,9 @@ def resolve_status_to_id(status: str, api_client) -> str:
     Returns:
         Status ID (e.g., "TS1") or the original value if not found
     """
+    if not status or not status.strip():
+        return status
+    
     try:
         # Get all available statuses
         statuses_response = api_client.get_task_status_choices()
@@ -90,36 +93,57 @@ def resolve_status_to_id(status: str, api_client) -> str:
             return status
         
         # Normalize input for comparison
-        status_lower = status.strip().lower()
+        status_normalized = status.strip()
+        status_lower = status_normalized.lower()
         
         # Check if it's already an ID (starts with "TS")
-        if status.upper().startswith('TS'):
+        if status_normalized.upper().startswith('TS'):
             # Verify it's a valid ID
             for s in status_choices:
-                if s.get('id', '').upper() == status.upper():
+                if s.get('id', '').upper() == status_normalized.upper():
                     return s['id']
-            return status  # Return as-is if not found
+            return status_normalized  # Return as-is if not found
         
-        # Try to match by name, slug, or meaning
+        # Try to match by exact name, slug, or meaning first (most reliable)
+        for status_obj in status_choices:
+            name = status_obj.get('name', '')
+            slug = status_obj.get('slug', '')
+            meaning = status_obj.get('meaning', '')
+            status_id = status_obj.get('id', '')
+            
+            # Exact matches (case-insensitive)
+            if (status_lower == name.lower() or 
+                status_lower == slug.lower() or 
+                status_lower == meaning.lower()):
+                return status_id
+        
+        # Try partial/fuzzy matching as fallback (e.g., "complete" -> "Complete")
+        # Only match if the input is a substring of the name/slug (not the other way around)
+        # This avoids false positives like "complete" matching "incomplete"
         for status_obj in status_choices:
             name = status_obj.get('name', '').lower()
             slug = status_obj.get('slug', '').lower()
             meaning = status_obj.get('meaning', '').lower()
             status_id = status_obj.get('id', '')
             
-            if (status_lower == name or 
-                status_lower == slug or 
-                status_lower == meaning or
-                status_lower in name or  # Partial match for "complete" -> "Complete"
-                status_lower in slug):
+            # Check if normalized input matches the start of name/slug/meaning
+            # or if it's a common variation
+            if (name.startswith(status_lower) or 
+                slug.startswith(status_lower) or
+                meaning.startswith(status_lower) or
+                # Handle common variations like "completed" -> "complete"
+                (status_lower in ['completed', 'done', 'finished'] and 'complete' in name) or
+                (status_lower in ['completed', 'done', 'finished'] and 'done' in slug)):
                 return status_id
         
         # If no match found, return original (might be a valid ID we don't know about)
-        return status
+        return status_normalized
         
-    except Exception:
-        # If lookup fails, return original value
-        return status
+    except Exception as e:
+        # If lookup fails, log the error but still return original value
+        # In production, you might want to log this for debugging
+        # For now, we'll return the original value
+        return status.strip()
 
 
 @mcp.tool()
@@ -137,6 +161,30 @@ async def update_countermeasure(ctx: Context, project_id: int, countermeasure_id
     if status is not None:
         # Resolve status name/slug to ID (API requires status IDs like "TS1", not names like "Complete")
         status_id = resolve_status_to_id(status, api_client)
+        
+        # Validate that we got a proper status ID (should start with "TS")
+        # If the resolved status doesn't look like an ID and doesn't match the original input,
+        # it means the conversion might have failed
+        if not status_id.upper().startswith('TS') and status_id.lower() == status.strip().lower():
+            # The status wasn't converted - this means we couldn't find a match
+            # Try to get available statuses to provide a helpful error message
+            try:
+                statuses_response = api_client.get_task_status_choices()
+                status_choices = statuses_response.get('status_choices', [])
+                available_statuses = [s.get('name', '') for s in status_choices if s.get('name')]
+                return json.dumps({
+                    "error": f"Could not resolve status '{status}' to a status ID. The API requires status IDs (e.g., 'TS1', 'TS2'), not names.",
+                    "provided_status": status,
+                    "available_status_names": available_statuses[:10],  # Show first 10
+                    "suggestion": "Use get_task_status_choices to see all available statuses and their IDs."
+                }, indent=2)
+            except Exception:
+                return json.dumps({
+                    "error": f"Could not resolve status '{status}' to a status ID. The API requires status IDs (e.g., 'TS1', 'TS2'), not names like '{status}'.",
+                    "provided_status": status,
+                    "suggestion": "Use get_task_status_choices to see all available statuses and their IDs."
+                }, indent=2)
+        
         data["status"] = status_id
     if notes is not None:
         data["status_note"] = notes
