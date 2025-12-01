@@ -19,12 +19,14 @@ async def get_project_survey(ctx: Context, project_id: int) -> str:
 
 
 @mcp.tool()
-async def update_project_survey(ctx: Context, project_id: int, answers: List[str], survey_complete: Optional[bool] = None) -> str:
-    """Update project survey with answer IDs"""
+async def update_project_survey(ctx: Context, project_id: int, answers: List[str], answers_to_deselect: Optional[List[str]] = None, survey_complete: Optional[bool] = None) -> str:
+    """Update project survey with answer IDs. Selects answers in 'answers' list and optionally deselects answers in 'answers_to_deselect' list."""
     global api_client
     if api_client is None:
         api_client = init_api_client()
     data = {"answers": answers}
+    if answers_to_deselect is not None:
+        data["answers_to_deselect"] = answers_to_deselect
     if survey_complete is not None:
         data["survey_complete"] = survey_complete
     result = api_client.update_project_survey(project_id, data)
@@ -42,8 +44,10 @@ async def find_survey_answers(ctx: Context, project_id: int, search_texts: List[
 
 
 @mcp.tool()
-async def set_project_survey_by_text(ctx: Context, project_id: int, answer_texts: List[str], survey_complete: Optional[bool] = None) -> str:
-    """Set/REPLACE all project survey answers by text. This REPLACES all existing answers with the new ones. Use ONLY when user wants to completely replace all answers. Use add_survey_answers_by_text if user says 'add' or wants to keep existing answers."""
+async def set_project_survey_by_text(ctx: Context, project_id: int, answer_texts: List[str], replace_all: bool = True, survey_complete: Optional[bool] = None) -> str:
+    """Set/REPLACE all project survey answers by text. This REPLACES all existing answers with the new ones. Use ONLY when user wants to completely replace all answers. Use add_survey_answers_by_text if user says 'add' or wants to keep existing answers.
+    
+    If replace_all is True (default), deselects all current answers not in the new list. If False, only selects the new answers without deselecting existing ones."""
     global api_client
     if api_client is None:
         api_client = init_api_client()
@@ -64,6 +68,16 @@ async def set_project_survey_by_text(ctx: Context, project_id: int, answer_texts
         }
     else:
         data = {"answers": answer_ids}
+        
+        # If replace_all is True, get current answers and deselect those not in the new list
+        if replace_all:
+            current_survey = api_client.get_project_survey(project_id)
+            current_answer_ids = set(current_survey.get('answers', []))
+            new_answer_ids = set(answer_ids)
+            answers_to_deselect = current_answer_ids - new_answer_ids
+            if answers_to_deselect:
+                data["answers_to_deselect"] = list(answers_to_deselect)
+        
         if survey_complete is not None:
             data["survey_complete"] = survey_complete
         update_result = api_client.update_project_survey(project_id, data)
@@ -71,6 +85,7 @@ async def set_project_survey_by_text(ctx: Context, project_id: int, answer_texts
             "success": True,
             "matched_answers": search_results,
             "answer_ids_used": answer_ids,
+            "replace_all": replace_all,
             "update_result": update_result
         }
     return json.dumps(result, indent=2)
@@ -78,33 +93,39 @@ async def set_project_survey_by_text(ctx: Context, project_id: int, answer_texts
 
 @mcp.tool()
 async def remove_survey_answers_by_text(ctx: Context, project_id: int, answer_texts_to_remove: List[str]) -> str:
-    """Remove survey answers by text"""
+    """Remove survey answers by text. This explicitly deselects the specified answers while keeping all other answers unchanged."""
     global api_client
     if api_client is None:
         api_client = init_api_client()
     
+    # Get current answers to preserve them
     current_survey = api_client.get_project_survey(project_id)
     current_answer_ids = current_survey.get('answers', [])
+    
+    # Find answer IDs for the texts to remove
     search_results = api_client.find_survey_answers_by_text(project_id, answer_texts_to_remove)
     
-    ids_to_remove = []
+    ids_to_deselect = []
     not_found = []
     for text, info in search_results.items():
         if info.get('id'):
-            ids_to_remove.append(info['id'])
+            ids_to_deselect.append(info['id'])
         else:
             not_found.append(text)
     
-    new_answer_ids = [aid for aid in current_answer_ids if aid not in ids_to_remove]
-    data = {"answers": new_answer_ids}
+    # Use explicit deselection - keep all current answers, just deselect the specified ones
+    data = {
+        "answers": current_answer_ids,  # Keep all current answers
+        "answers_to_deselect": ids_to_deselect  # Explicitly deselect these
+    }
     update_result = api_client.update_project_survey(project_id, data)
     
     result = {
         "success": True,
         "removed_answers": {text: info for text, info in search_results.items() if info.get('id')},
-        "ids_removed": ids_to_remove,
+        "ids_deselected": ids_to_deselect,
         "not_found": not_found,
-        "remaining_answer_count": len(new_answer_ids),
+        "remaining_answer_count": len(current_answer_ids) - len(ids_to_deselect),
         "update_result": update_result
     }
     return json.dumps(result, indent=2)

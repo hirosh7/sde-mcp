@@ -210,8 +210,8 @@ class SDElementsAPIClient:
         
         This method:
         1. Gets the current survey draft (works even if survey is already published)
-        2. Deselects any answers that are currently selected but not in the provided list
-        3. Selects each answer in the provided list one at a time, refreshing the draft state
+        2. Deselects any answers explicitly specified in 'answers_to_deselect'
+        3. Selects each answer in the 'answers' list one at a time, refreshing the draft state
            after each selection to capture any auto-added prerequisites
         4. Optionally commits the draft if survey_complete is True
         
@@ -224,11 +224,15 @@ class SDElementsAPIClient:
         
         Args:
             project_id: The project ID
-            data: Dictionary with 'answers' (list of answer IDs) and optionally 'survey_complete' (bool)
+            data: Dictionary with:
+                - 'answers' (list of answer IDs to select)
+                - 'answers_to_deselect' (optional list of answer IDs to deselect)
+                - 'survey_complete' (optional bool)
             
         Example:
             data = {
                 "answers": ["A21", "A493"],
+                "answers_to_deselect": ["A50"],
                 "survey_complete": True
             }
         """
@@ -246,8 +250,11 @@ class SDElementsAPIClient:
         
         current_answers = draft.get('answers', [])
         
-        # Get the target answer IDs
+        # Get the target answer IDs to select
         target_answer_ids = set(data.get('answers', []))
+        
+        # Get answer IDs to deselect (explicitly specified)
+        answers_to_deselect = set(data.get('answers_to_deselect', []))
         
         # Track what we're updating
         selected_count = 0
@@ -256,7 +263,32 @@ class SDElementsAPIClient:
         
         # First, get the current state of answers
         current_answer_map = {answer['id']: answer for answer in current_answers}
-        found_answer_ids = set(current_answer_map.keys())
+        
+        # Deselect explicitly specified answers first (before selection to avoid conflicts)
+        for answer_id in answers_to_deselect:
+            if answer_id not in current_answer_map:
+                # Answer doesn't exist in draft - skip
+                continue
+            
+            answer = current_answer_map[answer_id]
+            is_currently_selected = answer.get('selected', False)
+            
+            if is_currently_selected:
+                try:
+                    # API expects lowercase string "false" not boolean False
+                    self.patch(f'projects/{project_id}/survey/draft/{answer_id}/', {'selected': 'false'})
+                    deselected_count += 1
+                except Exception as e:
+                    errors.append(f"Failed to deselect {answer_id}: {str(e)}")
+        
+        # Refresh draft state after deselection to get updated state
+        if answers_to_deselect:
+            try:
+                draft = self.get(f'projects/{project_id}/survey/draft/')
+                current_answers = draft.get('answers', [])
+                current_answer_map = {answer['id']: answer for answer in current_answers}
+            except Exception as e:
+                errors.append(f"Failed to refresh draft state after deselection: {str(e)}")
         
         # Select answers one at a time (this allows prerequisites to be auto-resolved)
         # Refresh draft state after each selection to capture any auto-added prerequisites
@@ -298,8 +330,9 @@ class SDElementsAPIClient:
         result = {
             'success': True,
             'selected_count': selected_count,
-            'deselected_count': 0,
+            'deselected_count': deselected_count,
             'target_answers': list(target_answer_ids),
+            'deselected_answers': list(answers_to_deselect) if answers_to_deselect else None,
             'missing_answers': list(missing_answers) if missing_answers else None,
             'errors': errors if errors else None
         }
