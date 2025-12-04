@@ -204,3 +204,27 @@ async def commit_survey_draft(ctx: Context, project_id: int) -> str:
     result = api_client.commit_survey_draft(project_id)
     return json.dumps(result, indent=2)
 
+
+@mcp.tool()
+async def get_answer_details_from_ids(ctx: Context, answer_ids: List[str]) -> str:
+    """Get question and answer text for a list of answer IDs. Useful for understanding what survey answers mean when you have answer IDs (e.g., from profiles). Returns the question text and answer text for each answer ID.
+    
+    Example use cases:
+    - Get details for answer IDs from a profile
+    - Understand what specific answer IDs represent
+    - Map answer IDs to human-readable question/answer pairs
+    
+    Args:
+        answer_ids: List of answer IDs (e.g., ["A21", "A493", "A1252"])
+    
+    Returns:
+        JSON with answer details including:
+        - answers: List of answer details with id, text, question_id, question_text
+        - not_found: List of answer IDs that weren't found in the library
+    """
+    global api_client
+    if api_client is None:
+        api_client = init_api_client()
+    result = api_client.get_answer_details_from_ids(answer_ids)
+    return json.dumps(result, indent=2)
+

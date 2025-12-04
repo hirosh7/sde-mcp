@@ -231,3 +231,7 @@ Update the diagram for project 456,update_diagram,diagrams,Product manager updat
 Modify diagram 456,update_diagram,diagrams,Developer updating diagram,medium,developer
 Remove diagram 789,delete_diagram,diagrams,Product manager deleting diagram,medium,product_manager
 Make a custom API call to projects/123/,api_request,generic,Developer making custom API call,low,developer
+What question and answer is related to answer ID A701,get_answer_details_from_ids,surveys,Get question and answer details for answer ID,high,generic
+Get details for answer IDs A701 and A493,get_answer_details_from_ids,surveys,Get details for multiple answer IDs,high,generic
+What does answer ID A701 mean?,get_answer_details_from_ids,surveys,Understand what an answer ID represents,high,generic
+Show me the question and answer for answer ID A701,get_answer_details_from_ids,surveys,Request question and answer details,high,generic

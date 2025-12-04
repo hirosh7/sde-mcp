@@ -479,6 +479,114 @@ class SDElementsAPIClient:
         except Exception as e:
             self._library_answers_cache = []
     
+    def get_library_question(self, question_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Get question details from the library/questions endpoint.
+        
+        Args:
+            question_id: The question ID (e.g., "Q100")
+            params: Optional query parameters
+            
+        Returns:
+            Dictionary with question details including text, description, format, etc.
+        """
+        return self.get(f'library/questions/{question_id}/', params)
+    
+    def get_answer_details_from_ids(self, answer_ids: List[str]) -> Dict[str, Any]:
+        """
+        Get question and answer text for a list of answer IDs.
+        
+        This method:
+        1. Uses the cached library answers to get answer text and question IDs
+        2. Optionally fetches question details from library/questions endpoint
+        3. Returns a structured response with question and answer information
+        
+        Args:
+            answer_ids: List of answer IDs (e.g., ["A21", "A493"])
+            
+        Returns:
+            Dictionary with answer details including:
+            - answers: List of answer details with id, text, question_id, question_text
+            - not_found: List of answer IDs that weren't found
+        """
+        # Load library answers cache if not already loaded
+        if self._library_answers_cache is None:
+            self.load_library_answers()
+        
+        # Create a lookup map for library answers by ID
+        library_answers_map = {}
+        if self._library_answers_cache:
+            for answer in self._library_answers_cache:
+                answer_id = answer.get('id')
+                if answer_id:
+                    library_answers_map[answer_id] = answer
+        
+        results = {
+            'answers': [],
+            'not_found': []
+        }
+        
+        # Track unique question IDs to fetch question details
+        question_ids_to_fetch = set()
+        
+        # First pass: get answer details from cache
+        for answer_id in answer_ids:
+            if answer_id in library_answers_map:
+                answer_data = library_answers_map[answer_id]
+                question_id = answer_data.get('question')
+                
+                # Extract question text from display_text if available
+                display_text = answer_data.get('display_text', '')
+                question_text_from_display = ''
+                if ' - ' in display_text:
+                    question_text_from_display = display_text.split(' - ')[0]
+                
+                answer_info = {
+                    'id': answer_id,
+                    'text': answer_data.get('text', ''),
+                    'question_id': question_id,
+                    'question_text': question_text_from_display,  # From display_text
+                    'description': answer_data.get('description', ''),
+                    'display_text': display_text
+                }
+                
+                if question_id:
+                    question_ids_to_fetch.add(question_id)
+                
+                results['answers'].append(answer_info)
+            else:
+                results['not_found'].append(answer_id)
+        
+        # Second pass: fetch question details for unique question IDs
+        question_details_map = {}
+        for question_id in question_ids_to_fetch:
+            try:
+                question_data = self.get_library_question(question_id)
+                question_details_map[question_id] = {
+                    'id': question_data.get('id'),
+                    'text': question_data.get('text', ''),
+                    'description': question_data.get('description', ''),
+                    'format': question_data.get('format', ''),
+                    'mandatory': question_data.get('mandatory', False)
+                }
+            except Exception as e:
+                # If we can't fetch question details, we'll use the display_text version
+                question_details_map[question_id] = None
+        
+        # Third pass: enrich answer details with full question information
+        for answer_info in results['answers']:
+            question_id = answer_info.get('question_id')
+            if question_id and question_id in question_details_map:
+                question_details = question_details_map[question_id]
+                if question_details:
+                    # Use the full question text from the questions endpoint
+                    answer_info['question_text'] = question_details.get('text', answer_info.get('question_text', ''))
+                    answer_info['question_description'] = question_details.get('description', '')
+                    answer_info['question_format'] = question_details.get('format', '')
+                    answer_info['question_mandatory'] = question_details.get('mandatory', False)
+        
+        return results
+    
     def _calculate_similarity(self, str1: str, str2: str) -> float:
         """
         Calculate similarity between two strings using SequenceMatcher.

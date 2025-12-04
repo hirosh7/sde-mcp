@@ -279,12 +279,26 @@ If you have the package installed locally:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Python 3.10 or higher
 
+### Project Structure
+
+The project uses a `src/` layout:
+```
+sde-mcp/
+├── src/
+│   └── sde_mcp_server/    # Main package
+├── tests/                  # Test files
+├── pyproject.toml         # Project configuration
+└── README.md
+```
+
+Tests are configured to automatically add `src/` to the Python path (see `pyproject.toml`).
+
 ### Setup
 
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd sde-mcp-server
+cd sde-mcp
 
 # Create virtual environment and install dependencies
 uv sync
@@ -305,7 +319,7 @@ pip install -e ".[test-all]"
 uv sync --all-extras
 
 # Set up API key for integration tests (optional)
-cp tests/.env.example .env
+cp env.example .env
 # Edit .env and add: OPENAI_API_KEY=your-key-here
 ```
 
@@ -324,6 +338,7 @@ npx @modelcontextprotocol/inspector python -m sde_mcp_server
 - Always run tests from the project root directory (not from `tests/`)
 - The project must be installed first (`pip install -e .` or `uv sync`)
 - Test dependencies are isolated - they don't pollute the server installation
+- The `src/` layout is automatically handled by pytest's `pythonpath` configuration
 
 See `tests/README.md` for full testing guide.
 
