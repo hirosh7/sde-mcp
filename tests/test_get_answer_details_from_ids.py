@@ -252,7 +252,7 @@ class TestGetAnswerDetailsFromIds:
             assert len(result['answers']) == 1
     
     def test_get_answer_details_question_fetch_failure(self, sample_library_answers):
-        """Test that answer details still work if question fetch fails"""
+        """Test that answer details still work if question fetch fails and all fields are present with defaults"""
         from sde_mcp_server.api_client import SDElementsAPIError
         
         with patch.object(SDElementsAPIClient, 'load_library_answers'), \
@@ -270,6 +270,14 @@ class TestGetAnswerDetailsFromIds:
             assert answer['text'] == 'Java'
             # Should have question_text from display_text even if question fetch failed
             assert 'question_text' in answer
+            assert answer['question_text'] == 'What programming language do you use?'
+            # All question metadata fields should be present with default values
+            assert 'question_description' in answer
+            assert answer['question_description'] == ''  # Default when fetch fails
+            assert 'question_format' in answer
+            assert answer['question_format'] == ''  # Default when fetch fails
+            assert 'question_mandatory' in answer
+            assert answer['question_mandatory'] is False  # Default when fetch fails
     
     def test_get_answer_details_extracts_question_from_display_text(self, sample_library_answers):
         """Test that question text is extracted from display_text when question endpoint unavailable"""
