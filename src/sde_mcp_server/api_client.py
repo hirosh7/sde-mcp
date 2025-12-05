@@ -1432,4 +1432,4 @@ class SDElementsAPIClient:
             self.get_current_user()
             return True
         except (SDElementsAPIError, SDElementsAuthError):
-            return False 
+            return False
