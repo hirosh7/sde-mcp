@@ -590,6 +590,12 @@ class SDElementsAPIClient:
                     answer_info['question_description'] = ''
                     answer_info['question_format'] = ''
                     answer_info['question_mandatory'] = False
+            else:
+                # No question_id or question not in map, but ensure fields are always present with defaults
+                # question_text is already set from display_text in first pass (or empty if not available)
+                answer_info['question_description'] = ''
+                answer_info['question_format'] = ''
+                answer_info['question_mandatory'] = False
         
         return results
     
