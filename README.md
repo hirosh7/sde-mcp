@@ -378,7 +378,7 @@ sde-mcp-server
 **Note:** After creating the project, you must:
 1. Review the survey structure returned by the tool
 2. Set appropriate survey answers using `add_survey_answers_by_text` or `set_project_survey_by_text`
-3. Commit the survey draft using `commit_survey_draft` to generate countermeasures
+3. Commit the survey draft using `commit_survey_draft` to publish the survey and generate countermeasures.
 
 The `create_project_from_code` tool:
 - Creates or uses an existing application
@@ -821,4 +821,4 @@ For issues and questions:
 
 ---
 
-**Note**: This is an unofficial MCP server for SD Elements. For official SD Elements support, please contact Security Compass. 
+**Note**: This is an unofficial MCP server for SD Elements. For official SD Elements support, please contact Security Compass.
