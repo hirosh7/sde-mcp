@@ -584,6 +584,12 @@ class SDElementsAPIClient:
                     answer_info['question_description'] = question_details.get('description', '')
                     answer_info['question_format'] = question_details.get('format', '')
                     answer_info['question_mandatory'] = question_details.get('mandatory', False)
+                else:
+                    # Question fetch failed, but ensure fields are always present with defaults
+                    # question_text is already set from display_text in first pass
+                    answer_info['question_description'] = ''
+                    answer_info['question_format'] = ''
+                    answer_info['question_mandatory'] = False
         
         return results
     
