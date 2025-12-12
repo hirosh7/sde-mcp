@@ -708,18 +708,21 @@ class SDElementsAPIClient:
         
         Args:
             project_id: The project ID
-            question_id: The question ID (e.g., "Q1", "CQ1")
+            question_id: The question ID (e.g., "Q109", "CQ1") OR partial question text to search for
+                        (e.g., "programming language", "application type", "authentication")
             comment: The comment text to add
             
         Returns:
             Dictionary with the comment result including comment ID, author, and creation timestamp
             
         Example:
-            result = client.add_survey_question_comment(123, "Q1", "Selected Python because the project uses Django framework")
+            result = client.add_survey_question_comment(123, "Q109", "Selected Python because the project uses Django framework")
+            result = client.add_survey_question_comment(123, "programming language", "Python selected based on pyproject.toml")
         """
+        resolved_question_id = question_id
+        
+        # Try to use the question_id as-is first
         try:
-            # The correct endpoint is: projects/{project_id}/survey/comments/
-            # It accepts: {"question": question_id, "text": comment}
             result = self.post(
                 f'projects/{project_id}/survey/comments/',
                 {"question": question_id, "text": comment}
@@ -735,13 +738,80 @@ class SDElementsAPIClient:
                 'result': result
             }
         except Exception as e:
-            return {
-                'success': False,
-                'project_id': project_id,
-                'question_id': question_id,
-                'error': f"Failed to add comment: {str(e)}",
-                'suggestion': 'Verify the question ID exists in the survey. You can find question IDs by calling get_project_survey.'
-            }
+            error_str = str(e)
+            
+            # If the question ID doesn't exist, try searching by text
+            if 'does not exist' in error_str or '400' in error_str:
+                try:
+                    # Get the survey structure to search for the question
+                    survey_data = self.get_structured_survey_data(project_id)
+                    
+                    # Search for questions matching the text
+                    matching_questions = []
+                    search_text = question_id.lower()
+                    
+                    for section in survey_data.get('sections', []):
+                        for question in section.get('questions', []):
+                            question_text = question.get('text', '').lower()
+                            if search_text in question_text:
+                                matching_questions.append({
+                                    'id': question.get('id'),
+                                    'text': question.get('text'),
+                                    'section': section.get('title')
+                                })
+                    
+                    # If we found exactly one match, use it
+                    if len(matching_questions) == 1:
+                        resolved_question_id = matching_questions[0]['id']
+                        result = self.post(
+                            f'projects/{project_id}/survey/comments/',
+                            {"question": resolved_question_id, "text": comment}
+                        )
+                        return {
+                            'success': True,
+                            'project_id': project_id,
+                            'question_id': resolved_question_id,
+                            'original_search': question_id,
+                            'matched_question': matching_questions[0]['text'],
+                            'comment': comment,
+                            'comment_id': result.get('id'),
+                            'author': result.get('author', {}).get('email', 'Unknown'),
+                            'created': result.get('created'),
+                            'result': result
+                        }
+                    elif len(matching_questions) > 1:
+                        return {
+                            'success': False,
+                            'project_id': project_id,
+                            'question_id': question_id,
+                            'error': f"Multiple questions match '{question_id}'. Please be more specific.",
+                            'matches': matching_questions,
+                            'suggestion': 'Use one of the question IDs from the matches, or refine your search text.'
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'project_id': project_id,
+                            'question_id': question_id,
+                            'error': f"No questions found matching '{question_id}'.",
+                            'suggestion': 'Call get_project_survey to see all available questions and their IDs.'
+                        }
+                except Exception as search_error:
+                    return {
+                        'success': False,
+                        'project_id': project_id,
+                        'question_id': question_id,
+                        'error': f"Failed to search for question: {str(search_error)}",
+                        'suggestion': 'Use a valid question ID (e.g., "Q109", "CQ1"). Call get_project_survey to see available questions.'
+                    }
+            else:
+                return {
+                    'success': False,
+                    'project_id': project_id,
+                    'question_id': question_id,
+                    'error': f"Failed to add comment: {error_str}",
+                    'suggestion': 'Verify the question ID exists in the survey. You can find question IDs by calling get_project_survey.'
+                }
     
     def get_structured_survey_data(self, project_id: int) -> Dict[str, Any]:
         """

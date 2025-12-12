@@ -213,11 +213,15 @@ async def add_survey_question_comment(ctx: Context, project_id: int, question_id
     
     Args:
         project_id: The project ID
-        question_id: The question ID (e.g., "Q1", "CQ1", "Q123"). You can find question IDs by calling get_project_survey.
+        question_id: The question ID (e.g., "Q109", "CQ1") OR partial question text to search for
+                    (e.g., "programming language", "application type", "authentication").
+                    If you provide text, the tool will search for matching questions in the survey.
+                    If multiple matches are found, you'll get a list to choose from.
         comment: The comment text explaining why answers were selected for this question
     
-    Example:
-        "Add a comment to question Q1 in project 123 explaining that Python was selected because the project uses Django"
+    Examples:
+        "Add a comment to question Q109 in project 123 explaining that Python was selected"
+        "Add a comment to 'programming language' question explaining Python was selected based on pyproject.toml"
     """
     global api_client
     if api_client is None:
