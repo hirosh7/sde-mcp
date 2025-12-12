@@ -204,3 +204,24 @@ async def commit_survey_draft(ctx: Context, project_id: int) -> str:
     result = api_client.commit_survey_draft(project_id)
     return json.dumps(result, indent=2)
 
+
+@mcp.tool()
+async def add_survey_question_comment(ctx: Context, project_id: int, question_id: str, comment: str) -> str:
+    """Add a comment to a survey question. Use this to explain why specific answers were selected for a question, providing context and justification for survey answer choices. 
+    
+    This is especially useful when setting project survey answers to document the reasoning behind answer selections.
+    
+    Args:
+        project_id: The project ID
+        question_id: The question ID (e.g., "Q1", "CQ1", "Q123"). You can find question IDs by calling get_project_survey.
+        comment: The comment text explaining why answers were selected for this question
+    
+    Example:
+        "Add a comment to question Q1 in project 123 explaining that Python was selected because the project uses Django"
+    """
+    global api_client
+    if api_client is None:
+        api_client = init_api_client()
+    result = api_client.add_survey_question_comment(project_id, question_id, comment)
+    return json.dumps(result, indent=2)
+

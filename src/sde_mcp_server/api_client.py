@@ -699,6 +699,50 @@ class SDElementsAPIClient:
         result = self.post(f'projects/{project_id}/survey/draft/', {})
         return result
     
+    def add_survey_question_comment(self, project_id: int, question_id: str, comment: str) -> Dict[str, Any]:
+        """
+        Add a comment to a survey question.
+        
+        Comments can be used to explain why specific answers were selected for a question,
+        providing context and justification for survey answer choices.
+        
+        Args:
+            project_id: The project ID
+            question_id: The question ID (e.g., "Q1", "CQ1")
+            comment: The comment text to add
+            
+        Returns:
+            Dictionary with the comment result including comment ID, author, and creation timestamp
+            
+        Example:
+            result = client.add_survey_question_comment(123, "Q1", "Selected Python because the project uses Django framework")
+        """
+        try:
+            # The correct endpoint is: projects/{project_id}/survey/comments/
+            # It accepts: {"question": question_id, "text": comment}
+            result = self.post(
+                f'projects/{project_id}/survey/comments/',
+                {"question": question_id, "text": comment}
+            )
+            return {
+                'success': True,
+                'project_id': project_id,
+                'question_id': question_id,
+                'comment': comment,
+                'comment_id': result.get('id'),
+                'author': result.get('author', {}).get('email', 'Unknown'),
+                'created': result.get('created'),
+                'result': result
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'project_id': project_id,
+                'question_id': question_id,
+                'error': f"Failed to add comment: {str(e)}",
+                'suggestion': 'Verify the question ID exists in the survey. You can find question IDs by calling get_project_survey.'
+            }
+    
     def get_structured_survey_data(self, project_id: int) -> Dict[str, Any]:
         """
         Get structured survey data organized by sections and questions.
