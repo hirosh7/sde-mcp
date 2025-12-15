@@ -492,22 +492,27 @@ class SDElementsAPIClient:
         """
         return self.get(f'library/questions/{question_id}/', params)
     
-    def get_answer_details_from_ids(self, answer_ids: List[str]) -> Dict[str, Any]:
+    def get_answer_details_from_ids(self, answer_ids: List[str], project_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get question and answer text for a list of answer IDs.
         
         This method:
         1. Uses the cached library answers to get answer text and question IDs
         2. Optionally fetches question details from library/questions endpoint
-        3. Returns a structured response with question and answer information
+        3. Optionally includes section/subsection information if project_id is provided
+        4. Returns a structured response with question and answer information
         
         Args:
             answer_ids: List of answer IDs (e.g., ["A21", "A493"])
+            project_id: Optional project ID to fetch section/subsection info from survey structure.
+                       If provided, will enrich answers with section_title and section_id.
+                       If not provided, section info will not be included (backward compatible).
             
         Returns:
             Dictionary with answer details including:
-            - answers: List of answer details with id, text, question_id, question_text
-            - not_found: List of answer IDs that weren't found
+            - answers: List of answer details with id, text, question_id, question_text, 
+                      and optionally section_title, section_id
+            - not_found: List of answer IDs that weren't found in the library
         """
         # Load library answers cache if not already loaded
         if self._library_answers_cache is None:
@@ -520,6 +525,75 @@ class SDElementsAPIClient:
                 answer_id = answer.get('id')
                 if answer_id:
                     library_answers_map[answer_id] = answer
+        
+        # Build section/subsection mapping if project_id is provided
+        section_mapping = {}
+        question_to_section_map = {}  # Map question_id -> section info
+        if project_id is not None:
+            try:
+                survey = self.get_project_survey(project_id)
+                # Iterate through sections -> questions -> answers to build mapping
+                sections = survey.get('sections', [])
+                draft = None
+                
+                # If no sections in the main survey, try the draft endpoint which may have more complete structure
+                if not sections:
+                    try:
+                        draft = self.get(f'projects/{project_id}/survey/draft/')
+                        sections = draft.get('sections', [])
+                    except Exception:
+                        pass  # Fall back to empty sections
+                
+                # Build mapping from sections and also map questions to sections
+                for section in sections:
+                    section_title = section.get('title', 'Untitled Section')
+                    section_id = section.get('id', '')
+                    for question in section.get('questions', []):
+                        question_id = question.get('id')
+                        # Map question to section for later lookup
+                        if question_id:
+                            question_to_section_map[question_id] = {
+                                'section_title': section_title,
+                                'section_id': section_id
+                            }
+                        # Map answers directly from sections
+                        for answer in question.get('answers', []):
+                            answer_id = answer.get('id')
+                            if answer_id:
+                                section_mapping[answer_id] = {
+                                    'section_title': section_title,
+                                    'section_id': section_id
+                                }
+                
+                # If we have answers that aren't in the section mapping, try to find them
+                # in the draft's flat answers list and use question-to-section mapping
+                if draft is None:
+                    try:
+                        draft = self.get(f'projects/{project_id}/survey/draft/')
+                    except Exception:
+                        draft = None
+                
+                if draft and question_to_section_map:
+                    # Check flat answers list for answers not yet mapped
+                    draft_answers = draft.get('answers', [])
+                    for answer in draft_answers:
+                        answer_id = answer.get('id')
+                        question_id = answer.get('question')
+                        # If answer not in mapping but we know its question's section
+                        if answer_id and answer_id not in section_mapping and question_id in question_to_section_map:
+                            section_info = question_to_section_map[question_id]
+                            section_mapping[answer_id] = {
+                                'section_title': section_info['section_title'],
+                                'section_id': section_info['section_id']
+                            }
+                
+            except Exception as e:
+                # If we can't fetch survey structure, continue without section info
+                # This maintains backward compatibility
+                # Log the error for debugging but don't fail
+                import logging
+                logging.debug(f"Failed to fetch survey structure for project {project_id}: {e}")
+                pass
         
         results = {
             'answers': [],
@@ -596,6 +670,17 @@ class SDElementsAPIClient:
                 answer_info['question_description'] = ''
                 answer_info['question_format'] = ''
                 answer_info['question_mandatory'] = False
+            
+            # Fourth pass: enrich with section/subsection information if available
+            answer_id = answer_info.get('id')
+            if answer_id and answer_id in section_mapping:
+                section_info = section_mapping[answer_id]
+                answer_info['section_title'] = section_info.get('section_title', '')
+                answer_info['section_id'] = section_info.get('section_id', '')
+            else:
+                # No section info available (either project_id not provided or answer not in survey)
+                answer_info['section_title'] = None
+                answer_info['section_id'] = None
         
         return results
     

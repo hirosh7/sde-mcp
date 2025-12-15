@@ -85,6 +85,51 @@ def sample_question_details():
     }
 
 
+@pytest.fixture
+def sample_survey_structure():
+    """Sample survey structure with sections for testing section/subsection mapping"""
+    return {
+        'sections': [
+            {
+                'id': 'tech',
+                'title': 'Technologies',
+                'description': 'Technology-related questions',
+                'questions': [
+                    {
+                        'id': 'Q100',
+                        'text': 'What programming language do you use?',
+                        'answers': [
+                            {'id': 'A701', 'text': 'Java'},
+                            {'id': 'A702', 'text': 'Python'}
+                        ]
+                    },
+                    {
+                        'id': 'Q200',
+                        'text': 'What database do you use?',
+                        'answers': [
+                            {'id': 'A493', 'text': 'PostgreSQL'}
+                        ]
+                    }
+                ]
+            },
+            {
+                'id': 'app_type',
+                'title': 'Application Type',
+                'description': 'Application classification',
+                'questions': [
+                    {
+                        'id': 'Q50',
+                        'text': 'What type of application?',
+                        'answers': [
+                            {'id': 'A21', 'text': 'Web Application'}
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
+
 class TestGetLibraryQuestion:
     """Tests for get_library_question API client method"""
     
@@ -293,6 +338,141 @@ class TestGetAnswerDetailsFromIds:
             answer = result['answers'][0]
             # Should extract question from display_text
             assert answer['question_text'] == 'What programming language do you use?'
+    
+    def test_get_answer_details_with_project_id_includes_section_info(self, sample_library_answers, sample_question_details, sample_survey_structure):
+        """Test that section info is included when project_id is provided"""
+        with patch.object(SDElementsAPIClient, 'load_library_answers'), \
+             patch.object(SDElementsAPIClient, 'get_library_question') as mock_get_question, \
+             patch.object(SDElementsAPIClient, 'get_project_survey') as mock_get_survey:
+            
+            client = SDElementsAPIClient(host='https://test.sdelements.com', api_key='test-key')
+            client._library_answers_cache = sample_library_answers
+            
+            def get_question_side_effect(question_id):
+                return sample_question_details.get(question_id, {})
+            
+            mock_get_question.side_effect = get_question_side_effect
+            mock_get_survey.return_value = sample_survey_structure
+            
+            result = client.get_answer_details_from_ids(['A701', 'A493'], project_id=123)
+            
+            assert len(result['answers']) == 2
+            # Verify section info is included
+            for answer in result['answers']:
+                assert 'section_title' in answer
+                assert 'section_id' in answer
+                if answer['id'] == 'A701':
+                    assert answer['section_title'] == 'Technologies'
+                    assert answer['section_id'] == 'tech'
+                elif answer['id'] == 'A493':
+                    assert answer['section_title'] == 'Technologies'
+                    assert answer['section_id'] == 'tech'
+            
+            # Verify get_project_survey was called
+            mock_get_survey.assert_called_once_with(123)
+    
+    def test_get_answer_details_without_project_id_no_section_info(self, sample_library_answers, sample_question_details):
+        """Test backward compatibility - no section info when project_id is not provided"""
+        with patch.object(SDElementsAPIClient, 'load_library_answers'), \
+             patch.object(SDElementsAPIClient, 'get_library_question') as mock_get_question:
+            
+            client = SDElementsAPIClient(host='https://test.sdelements.com', api_key='test-key')
+            client._library_answers_cache = sample_library_answers
+            
+            def get_question_side_effect(question_id):
+                return sample_question_details.get(question_id, {})
+            
+            mock_get_question.side_effect = get_question_side_effect
+            
+            result = client.get_answer_details_from_ids(['A701'])
+            
+            assert len(result['answers']) == 1
+            answer = result['answers'][0]
+            # Section fields should be None when project_id not provided
+            assert 'section_title' in answer
+            assert 'section_id' in answer
+            assert answer['section_title'] is None
+            assert answer['section_id'] is None
+    
+    def test_get_answer_details_with_project_id_answer_not_in_survey(self, sample_library_answers, sample_question_details, sample_survey_structure):
+        """Test that answer not in survey structure has None for section fields"""
+        with patch.object(SDElementsAPIClient, 'load_library_answers'), \
+             patch.object(SDElementsAPIClient, 'get_library_question') as mock_get_question, \
+             patch.object(SDElementsAPIClient, 'get_project_survey') as mock_get_survey:
+            
+            client = SDElementsAPIClient(host='https://test.sdelements.com', api_key='test-key')
+            client._library_answers_cache = sample_library_answers
+            
+            def get_question_side_effect(question_id):
+                return sample_question_details.get(question_id, {})
+            
+            mock_get_question.side_effect = get_question_side_effect
+            mock_get_survey.return_value = sample_survey_structure
+            
+            # A999 is not in the survey structure
+            result = client.get_answer_details_from_ids(['A999'], project_id=123)
+            
+            # Answer should still be found in library, but section info should be None
+            assert len(result['answers']) == 0  # A999 is not in sample_library_answers either
+            assert 'A999' in result['not_found']
+    
+    def test_get_answer_details_with_project_id_survey_fetch_fails(self, sample_library_answers, sample_question_details):
+        """Test graceful handling when survey fetch fails"""
+        from sde_mcp_server.api_client import SDElementsAPIError
+        
+        with patch.object(SDElementsAPIClient, 'load_library_answers'), \
+             patch.object(SDElementsAPIClient, 'get_library_question') as mock_get_question, \
+             patch.object(SDElementsAPIClient, 'get_project_survey') as mock_get_survey:
+            
+            client = SDElementsAPIClient(host='https://test.sdelements.com', api_key='test-key')
+            client._library_answers_cache = sample_library_answers
+            
+            def get_question_side_effect(question_id):
+                return sample_question_details.get(question_id, {})
+            
+            mock_get_question.side_effect = get_question_side_effect
+            mock_get_survey.side_effect = SDElementsAPIError("Survey fetch failed")
+            
+            # Should still work, just without section info
+            result = client.get_answer_details_from_ids(['A701'], project_id=123)
+            
+            assert len(result['answers']) == 1
+            answer = result['answers'][0]
+            # Section fields should be None when survey fetch fails
+            assert answer['section_title'] is None
+            assert answer['section_id'] is None
+            # But other fields should still be present
+            assert answer['id'] == 'A701'
+            assert answer['text'] == 'Java'
+    
+    def test_get_answer_details_with_project_id_multiple_sections(self, sample_library_answers, sample_question_details, sample_survey_structure):
+        """Test getting details for answers from different sections"""
+        with patch.object(SDElementsAPIClient, 'load_library_answers'), \
+             patch.object(SDElementsAPIClient, 'get_library_question') as mock_get_question, \
+             patch.object(SDElementsAPIClient, 'get_project_survey') as mock_get_survey:
+            
+            client = SDElementsAPIClient(host='https://test.sdelements.com', api_key='test-key')
+            client._library_answers_cache = sample_library_answers
+            
+            def get_question_side_effect(question_id):
+                return sample_question_details.get(question_id, {})
+            
+            mock_get_question.side_effect = get_question_side_effect
+            mock_get_survey.return_value = sample_survey_structure
+            
+            # Get answers from different sections
+            result = client.get_answer_details_from_ids(['A701', 'A21'], project_id=123)
+            
+            assert len(result['answers']) == 2
+            answer_dict = {a['id']: a for a in result['answers']}
+            
+            # A701 should be in Technologies section
+            assert answer_dict['A701']['section_title'] == 'Technologies'
+            assert answer_dict['A701']['section_id'] == 'tech'
+            
+            # A21 should be in Application Type section
+            assert answer_dict['A21']['section_title'] == 'Application Type'
+            assert answer_dict['A21']['section_id'] == 'app_type'
 
 
 class TestGetAnswerDetailsFromIdsTool:
@@ -346,7 +526,7 @@ class TestGetAnswerDetailsFromIdsTool:
             assert parsed['answers'][0]['id'] == 'A701'
             
             # Verify API client method was called
-            mock_client.get_answer_details_from_ids.assert_called_once_with(['A701'])
+            mock_client.get_answer_details_from_ids.assert_called_once_with(['A701'], project_id=None)
     
     @pytest.mark.asyncio
     async def test_tool_multiple_answer_ids(self):
@@ -372,7 +552,7 @@ class TestGetAnswerDetailsFromIdsTool:
             
             parsed = json.loads(result)
             assert len(parsed['answers']) == 2
-            mock_client.get_answer_details_from_ids.assert_called_once_with(['A701', 'A493'])
+            mock_client.get_answer_details_from_ids.assert_called_once_with(['A701', 'A493'], project_id=None)
     
     @pytest.mark.asyncio
     async def test_tool_with_not_found_answers(self):
@@ -400,6 +580,42 @@ class TestGetAnswerDetailsFromIdsTool:
             assert len(parsed['not_found']) == 2
             assert 'A999' in parsed['not_found']
             assert 'A998' in parsed['not_found']
+    
+    @pytest.mark.asyncio
+    async def test_tool_with_project_id(self):
+        """Test the MCP tool with project_id parameter"""
+        mock_client = Mock(spec=SDElementsAPIClient)
+        expected_result = {
+            'answers': [
+                {
+                    'id': 'A701',
+                    'text': 'Java',
+                    'question_id': 'Q100',
+                    'question_text': 'What programming language do you use?',
+                    'section_title': 'Technologies',
+                    'section_id': 'tech'
+                }
+            ],
+            'not_found': []
+        }
+        mock_client.get_answer_details_from_ids.return_value = expected_result
+        
+        with patch('sde_mcp_server.tools.surveys.api_client', None), \
+             patch('sde_mcp_server.tools.surveys.init_api_client', return_value=mock_client):
+            
+            import sde_mcp_server.tools.surveys as surveys_module
+            tool_func = surveys_module.get_answer_details_from_ids.fn
+            
+            mock_ctx = Mock(spec=Context)
+            result = await tool_func(mock_ctx, ['A701'], project_id=123)
+            
+            parsed = json.loads(result)
+            assert len(parsed['answers']) == 1
+            assert parsed['answers'][0]['section_title'] == 'Technologies'
+            assert parsed['answers'][0]['section_id'] == 'tech'
+            
+            # Verify API client method was called with project_id
+            mock_client.get_answer_details_from_ids.assert_called_once_with(['A701'], project_id=123)
 
 
 @pytest.mark.unit
