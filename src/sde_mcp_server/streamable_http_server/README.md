@@ -9,13 +9,71 @@ The streamable HTTP transport allows the MCP server to be accessed over HTTP, ma
 ## Prerequisites
 
 - Python 3.10 or higher
-- Virtual environment with dependencies installed (see main README)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager (recommended) or pip
+- Git
 - SD Elements API credentials
 - Anthropic API key (for the client)
+
+## Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/hirosh7/sde-mcp.git
+cd sde-mcp
+```
+
+### 2. Set Up Virtual Environment and Install Dependencies
+
+**Using uv (recommended):**
+
+```bash
+# Create virtual environment and install all dependencies
+uv sync
+
+# Activate virtual environment (if needed)
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+source .venv/bin/activate
+```
+
+**Using pip:**
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -e .
+```
+
+**Note:** The `uv sync` command will:
+- Create a virtual environment in `.venv/`
+- Install all project dependencies from `pyproject.toml`
+- Set up the project in editable mode
+
+### 3. Verify Installation
+
+```bash
+# Check that the module can be imported
+python -c "import sde_mcp_server; print('Installation successful!')"
+
+# Or check installed packages
+pip list | grep fastmcp
+```
 
 ## Configuration
 
 ### Environment Variables
+
+After cloning and setting up the environment, you need to configure your API credentials.
 
 Create a `.env` file in the project root directory with the following variables:
 
