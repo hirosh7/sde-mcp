@@ -86,7 +86,7 @@ async def main():
         # Direct test
         print(await client.process_query("What is the addition of 23 and 56.67?"))
         # Optionally enable chat
-        # await client.chat_loop()
+        await client.chat_loop()
     finally:
         await client.close()
 if __name__ == "__main__":

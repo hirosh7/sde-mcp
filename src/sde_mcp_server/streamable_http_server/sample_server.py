@@ -21,6 +21,20 @@ def add(a: float, b: float) -> Dict[str, Any]:
         "result": a + b,
         "success": True,
     }
+
+@mcp.tool(
+    name="multiply_numbers",
+    description="Multiply two numbers together",
+    structured_output=True,
+)
+def multiply(a: float, b: float) -> Dict[str, Any]:
+    return {
+        "operation": "multiplication", 
+        "operands": {"a": a, "b": b},
+        "result": a * b,
+        "success": True,
+    }
+    
 if __name__ == "__main__":
     # The magic happens here - HTTP streamable transport!
     mcp.run(transport="streamable-http", mount_path="/mcp")
