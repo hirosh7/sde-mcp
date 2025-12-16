@@ -1,0 +1,31 @@
+{
+  "manifest_version": "0.3",
+  "name": "sde-mcp",
+  "display_name": "Computer Use",
+  "version": "{{VERSION}}",
+  "description": "MCP server for SD Elements",
+  "icon": "icon.png",
+  "author": {
+    "name": "",
+    "url": ""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sdelements/sde-mcp"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "dist/main.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/main.js"]
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
