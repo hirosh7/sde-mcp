@@ -111,6 +111,7 @@ class MCPClient:
         
         # Use a copy of conversation history to avoid modifying the original
         messages = (conversation_history or []).copy() if conversation_history else []
+        initial_message_count = len(messages)
         messages.append({"role": "user", "content": query})
         
         max_iterations = 10  # Prevent infinite loops
@@ -174,6 +175,8 @@ class MCPClient:
             # If there are tool results, send them back to Claude for natural language response
             if tool_results:
                 messages.append({"role": "user", "content": tool_results})
+                # Continue loop to get Claude's final response after processing tool results
+                continue
             else:
                 # No more tool calls, return the final text response
                 text_parts = [
@@ -183,10 +186,21 @@ class MCPClient:
                 final_response = "\n".join(text_parts) if text_parts else "No response generated."
                 # Update conversation history with this exchange
                 if conversation_history is not None:
-                    conversation_history.extend(messages[-2:])  # Add user query and assistant response
+                    # Only add NEW messages (not the ones we copied from history)
+                    new_messages = messages[initial_message_count:]
+                    conversation_history.extend(new_messages)
                 return final_response
         
         return "Maximum iterations reached. Please try a simpler query."
+
+    def _safe_print(self, text: str):
+        """Print text safely handling Unicode on Windows"""
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            # Replace Unicode characters that can't be encoded
+            safe_text = text.encode('ascii', 'replace').decode('ascii')
+            print(safe_text)
 
     async def chat_loop(self):
         print("Ask questions (type 'exit' to quit, 'clear' to reset conversation):")
@@ -201,8 +215,14 @@ class MCPClient:
             if not user_input:
                 continue
             
-            response = await self.process_query(user_input, self.conversation_history)
-            print("\nAssistant:", response)
+            try:
+                response = await self.process_query(user_input, self.conversation_history)
+                print("\nAssistant:", end=" ")
+                self._safe_print(response)
+            except Exception as e:
+                print(f"\nError: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
 
 
     async def close(self):
