@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { registerGenericTools } from "./generic";
-import { registerSurveyTools } from "./surveys";
+import { registerGenericTools } from "./generic.js";
+import { registerSurveyTools } from "./surveys.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { SDElementsClient } from "../utils/apiClient";
+import type { SDElementsClient } from "../utils/apiClient.js";
 
 type ToolResult = {
   content: Array<{ type: string; text: string }>;

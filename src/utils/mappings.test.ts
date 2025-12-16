@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractAnswerTextsFromContext } from "./mappings";
+import { extractAnswerTextsFromContext } from "./mappings.js";
 
 describe("extractAnswerTextsFromContext", () => {
   it("returns [] for empty context", () => {
@@ -58,5 +58,3 @@ describe("extractAnswerTextsFromContext", () => {
     expect(matched).toEqual(["Google Cloud Platform", "JSON", "YAML"]);
   });
 });
-
-
