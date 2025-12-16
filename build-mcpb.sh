@@ -15,7 +15,11 @@ mv manifest.json.tmp manifest.json
 # Remove devDependencies
 echo "Removing devDependencies and types from node_modules..."
 rm -rf node_modules
-npm ci --omit=dev --audit false --fund false
+# We already built `dist/` above. During the pruned install (prod deps only),
+# `npm` would run lifecycle scripts like `prepare`, which would try to rebuild
+# without devDependencies (typescript/@types/etc) and can fail. We explicitly
+# ignore scripts here because the MCPB package should ship the prebuilt `dist/`.
+npm ci --omit=dev --ignore-scripts --audit false --fund false
 
 find node_modules -name "*.ts" -type f -delete 2>/dev/null || true
 
