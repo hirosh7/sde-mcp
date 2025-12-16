@@ -24,7 +24,9 @@ from .api_client import SDElementsAPIClient, SDElementsAPIError, SDElementsAuthE
 load_dotenv()
 
 # FastMCP server instance
-mcp = FastMCP("sdelements-mcp")
+# Note: streamable_http_path is set here (deprecated but functional)
+# The deprecation warning suggests moving it to run(), but that doesn't work with the current API
+mcp = FastMCP("sdelements-mcp", streamable_http_path="/mcp")
 
 # Global API client
 api_client: Optional[SDElementsAPIClient] = None
@@ -315,12 +317,13 @@ def main():
     # Apply nest_asyncio if available to handle nested event loops (e.g., in Jupyter)
     # This is optional - the server works fine without it in normal usage
     try:
-        import nest_asyncio
+        import nest_asyncio  # type: ignore[import-untyped]
         nest_asyncio.apply()
     except ImportError:
         pass  # nest_asyncio not available - not required for normal operation
     
-    mcp.run()
+    # Run with streamable HTTP transport
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8001)
 
 
 if __name__ == "__main__":
