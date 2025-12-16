@@ -82,7 +82,10 @@ export function registerSurveyTools(
           .describe("List of answer texts to search for"),
       }),
     },
-    async ({ project_id: _project_id, search_texts }) => {
+    async ({ project_id, search_texts }) => {
+      // Tool signature includes project_id for consistency with other survey tools,
+      // but this operation searches the shared answer library (not project-scoped).
+      void project_id;
       const result = await client.findAnswersByText(search_texts);
 
       return {

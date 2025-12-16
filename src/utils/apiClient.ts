@@ -303,7 +303,7 @@ export class SDElementsClient {
       }
 
       // Attempt to parse JSON regardless of status
-      let responseBody: any;
+      let responseBody: unknown;
       const textBody = await response.text();
       try {
         responseBody = textBody ? JSON.parse(textBody) : {};
@@ -312,12 +312,21 @@ export class SDElementsClient {
       }
 
       if (!response.ok) {
+        const getStringField = (
+          obj: unknown,
+          key: string
+        ): string | undefined => {
+          if (!obj || typeof obj !== "object") return undefined;
+          const value = (obj as Record<string, unknown>)[key];
+          return typeof value === "string" ? value : undefined;
+        };
+
         // Formatting standard JavaScript Error
         const status = response.status;
         const msg =
-          responseBody.detail ||
-          responseBody.error ||
-          responseBody.message ||
+          getStringField(responseBody, "detail") ||
+          getStringField(responseBody, "error") ||
+          getStringField(responseBody, "message") ||
           textBody ||
           "Unknown Error";
 

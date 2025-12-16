@@ -125,7 +125,7 @@ async function resolveStatusToId(
 
     // If no match found, return original
     return statusNormalized;
-  } catch (error) {
+  } catch {
     // If lookup fails, return original value
     return status.trim();
   }
