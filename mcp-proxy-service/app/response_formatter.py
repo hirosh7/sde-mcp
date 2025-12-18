@@ -70,27 +70,47 @@ class ResponseFormatter:
     
     def _format_project_details(self, result: Dict[str, Any]) -> str:
         """Format project details result"""
-        project = result.get("project", {})
-        if not project:
+        # SD Elements API returns project data directly, not wrapped in "project" key
+        # Check if result itself is a project (has "id" field) or if it's wrapped
+        if "id" in result and "name" in result:
+            # Result is the project object directly
+            project = result
+        elif "project" in result:
+            # Result is wrapped in "project" key
+            project = result.get("project", {})
+        else:
+            return "Project not found."
+        
+        if not project or not project.get("id"):
             return "Project not found."
         
         name = project.get("name", "Unknown")
         proj_id = project.get("id", "Unknown")
-        status = project.get("status", "")
         url = project.get("url", "")
         
         response = f"Project: {name} (ID: {proj_id})"
-        if status:
-            response += f"\nStatus: {status}"
         if url:
             response += f"\nURL: {url}"
         
-        # Add other key fields
-        for key in ["description", "created_date", "modified_date"]:
-            if key in project and project[key]:
-                value = project[key]
-                formatted_key = key.replace("_", " ").title()
-                response += f"\n{formatted_key}: {value}"
+        # Add description if available
+        description = project.get("description")
+        if description:
+            response += f"\nDescription: {description}"
+        
+        # Add created/updated dates (API uses "created" and "updated", not "created_date")
+        created = project.get("created") or project.get("created_date")
+        if created:
+            response += f"\nCreated: {created}"
+        
+        updated = project.get("updated") or project.get("modified_date")
+        if updated:
+            response += f"\nUpdated: {updated}"
+        
+        # Add profile information if available
+        profile = project.get("profile")
+        if profile:
+            profile_name = profile.get("name") if isinstance(profile, dict) else str(profile)
+            response += f"\nProfile: {profile_name}"
         
         return response
     
