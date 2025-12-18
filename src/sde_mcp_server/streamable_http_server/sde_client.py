@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import time
 from typing import Any, Optional
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -9,7 +11,7 @@ from mcp.client.streamable_http import streamablehttp_client
 load_dotenv()  # Load ANTHROPIC_API_KEY from .env
 
 class MCPClient:
-    def __init__(self, server_url: str):
+    def __init__(self, server_url: str, enable_timing: bool = False):
         self.server_url = server_url
         self.anthropic = Anthropic()  # Requires ANTHROPIC_API_KEY env var
         self.session: Optional[ClientSession] = None
@@ -17,6 +19,8 @@ class MCPClient:
         self.client_context = None
         self.session_context = None
         self.conversation_history: list = []  # Track conversation for context
+        # Enable timing via parameter or ENABLE_TIMING env var
+        self.enable_timing = enable_timing or os.getenv("ENABLE_TIMING", "").lower() in ("true", "1", "yes")
 
     async def connect(self):
         # Connect to the streamable HTTP server
@@ -100,6 +104,9 @@ class MCPClient:
 
     async def process_query(self, query: str, conversation_history: Optional[list] = None) -> str:
         """Process a query with Claude, handling tool calls and formatting responses"""
+        query_start = time.time()
+        self._timing_print(f"\n[TIMING] Starting query processing at {query_start:.2f}")
+        
         # Send message to Claude with tool list
         # NOTE: Model name must match your API access. Common models:
         # - claude-sonnet-4-20250514 (latest)
@@ -119,13 +126,20 @@ class MCPClient:
         
         while iteration < max_iterations:
             iteration += 1
+            iteration_start = time.time()
+            self._timing_print(f"[TIMING] Iteration {iteration} started at {iteration_start:.2f}")
+            
             try:
+                claude_start = time.time()
+                self._timing_print(f"[TIMING] Calling Claude API (Haiku)...")
                 claude_resp = self.anthropic.messages.create(
-                    model="claude-sonnet-4-20250514",  # Update this to match your API access
+                    model="claude-3-5-haiku-20241022",  # Fast and cost-effective model
                     max_tokens=4000,
                     messages=messages,
                     tools=self.tools,
                 )
+                claude_elapsed = time.time() - claude_start
+                self._timing_print(f"[TIMING] Claude API responded in {claude_elapsed:.2f}s")
             except Exception as e:
                 error_msg = str(e)
                 if "not_found_error" in error_msg or "404" in error_msg:
@@ -149,11 +163,17 @@ class MCPClient:
                     tool_args = chunk.input
                     tool_id = chunk.id
                     
-                    print(f"[Calling tool: {tool_name}]", flush=True)
+                    tool_start = time.time()
+                    self._timing_print(f"[TIMING] Calling tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:100]}...")
                     result = await self.session.call_tool(tool_name, tool_args)
+                    tool_elapsed = time.time() - tool_start
+                    self._timing_print(f"[TIMING] Tool {tool_name} completed in {tool_elapsed:.2f}s")
                     
                     # Format the result
+                    format_start = time.time()
                     formatted_result = self._format_tool_result(tool_name, result.content)
+                    format_elapsed = time.time() - format_start
+                    self._timing_print(f"[TIMING] Result formatting took {format_elapsed:.2f}s")
                     
                     # Add tool use to assistant message
                     assistant_message["content"].append({
@@ -172,8 +192,12 @@ class MCPClient:
             
             messages.append(assistant_message)
             
+            iteration_elapsed = time.time() - iteration_start
+            self._timing_print(f"[TIMING] Iteration {iteration} completed in {iteration_elapsed:.2f}s")
+            
             # If there are tool results, send them back to Claude for natural language response
             if tool_results:
+                self._timing_print(f"[TIMING] {len(tool_results)} tool result(s) to send back to Claude")
                 messages.append({"role": "user", "content": tool_results})
                 # Continue loop to get Claude's final response after processing tool results
                 continue
@@ -189,8 +213,13 @@ class MCPClient:
                     # Only add NEW messages (not the ones we copied from history)
                     new_messages = messages[initial_message_count:]
                     conversation_history.extend(new_messages)
+                
+                total_elapsed = time.time() - query_start
+                self._timing_print(f"[TIMING] COMPLETE: Total query processing completed in {total_elapsed:.2f}s ({iteration} iterations)")
                 return final_response
         
+        total_elapsed = time.time() - query_start
+        self._timing_print(f"[TIMING] ERROR: Maximum iterations reached after {total_elapsed:.2f}s")
         return "Maximum iterations reached. Please try a simpler query."
 
     def _safe_print(self, text: str):
@@ -201,6 +230,11 @@ class MCPClient:
             # Replace Unicode characters that can't be encoded
             safe_text = text.encode('ascii', 'replace').decode('ascii')
             print(safe_text)
+    
+    def _timing_print(self, text: str):
+        """Print timing information only if timing is enabled"""
+        if self.enable_timing:
+            print(text, flush=True)
 
     async def chat_loop(self):
         print("Ask questions (type 'exit' to quit, 'clear' to reset conversation):")
@@ -233,6 +267,8 @@ class MCPClient:
 
 
 async def main():
+    # Enable timing via ENABLE_TIMING env var (set to "true", "1", or "yes")
+    # or pass enable_timing=True to MCPClient constructor
     client = MCPClient("http://localhost:8001/mcp")
     try:
         await client.connect()
