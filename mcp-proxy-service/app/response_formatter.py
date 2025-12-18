@@ -35,18 +35,31 @@ class ResponseFormatter:
         return formatter(result)
     
     def _format_project_creation(self, result: Dict[str, Any]) -> str:
-        """Format project creation result"""
-        if result.get("success"):
+        """Format project creation result
+        
+        API returns: Project object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is a project object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            project = result
+        elif "project" in result:
             project = result.get("project", {})
-            name = project.get("name", "Unknown")
-            project_id = project.get("id", "Unknown")
-            url = project.get("url", "")
-            
-            response = f"Successfully created project '{name}' (ID: {project_id})"
-            if url:
-                response += f". You can view it at: {url}"
-            return response
-        return f"Failed to create project: {result.get('error', 'Unknown error')}"
+        elif "error" in result:
+            return f"Failed to create project: {result.get('error', 'Unknown error')}"
+        else:
+            return "Failed to create project: Invalid response format"
+        
+        if not project or not project.get("id"):
+            return "Failed to create project: No project data returned"
+        
+        name = project.get("name", "Unknown")
+        project_id = project.get("id", "Unknown")
+        url = project.get("url", "")
+        
+        response = f"Successfully created project '{name}' (ID: {project_id})"
+        if url:
+            response += f". You can view it at: {url}"
+        return response
     
     def _format_project_list(self, result: Dict[str, Any]) -> str:
         """Format project list result"""
@@ -115,25 +128,55 @@ class ResponseFormatter:
         return response
     
     def _format_project_update(self, result: Dict[str, Any]) -> str:
-        """Format project update result"""
-        if result.get("success"):
+        """Format project update result
+        
+        API returns: Updated project object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is a project object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            project = result
+        elif "project" in result:
             project = result.get("project", {})
-            name = project.get("name", "Unknown")
-            return f"Successfully updated project '{name}'"
-        return f"Failed to update project: {result.get('error', 'Unknown error')}"
+        elif "error" in result:
+            return f"Failed to update project: {result.get('error', 'Unknown error')}"
+        else:
+            return "Failed to update project: Invalid response format"
+        
+        if not project or not project.get("id"):
+            return "Failed to update project: No project data returned"
+        
+        name = project.get("name", "Unknown")
+        return f"Successfully updated project '{name}'"
     
     def _format_application_creation(self, result: Dict[str, Any]) -> str:
-        """Format application creation result"""
-        if result.get("success"):
+        """Format application creation result
+        
+        API returns: Created application object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is an application object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            app = result
+        elif "application" in result:
             app = result.get("application", {})
-            name = app.get("name", "Unknown")
-            app_id = app.get("id", "Unknown")
-            return f"Successfully created application '{name}' (ID: {app_id})"
-        return f"Failed to create application: {result.get('error', 'Unknown error')}"
+        elif "error" in result:
+            return f"Failed to create application: {result.get('error', 'Unknown error')}"
+        else:
+            return "Failed to create application: Invalid response format"
+        
+        if not app or not app.get("id"):
+            return "Failed to create application: No application data returned"
+        
+        name = app.get("name", "Unknown")
+        app_id = app.get("id", "Unknown")
+        return f"Successfully created application '{name}' (ID: {app_id})"
     
     def _format_application_list(self, result: Dict[str, Any]) -> str:
-        """Format application list result"""
-        applications = result.get("applications", [])
+        """Format application list result
+        
+        API returns: {"results": [...]} (paginated response)
+        """
+        # SD Elements API returns applications in a "results" array
+        applications = result.get("results", result.get("applications", []))
         if not applications:
             return "No applications found."
         
@@ -149,9 +192,19 @@ class ResponseFormatter:
         return response.strip()
     
     def _format_application_details(self, result: Dict[str, Any]) -> str:
-        """Format application details result"""
-        app = result.get("application", {})
-        if not app:
+        """Format application details result
+        
+        API returns: Application object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is an application object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            app = result
+        elif "application" in result:
+            app = result.get("application", {})
+        else:
+            return "Application not found."
+        
+        if not app or not app.get("id"):
             return "Application not found."
         
         name = app.get("name", "Unknown")
@@ -159,17 +212,34 @@ class ResponseFormatter:
         return f"Application: {name} (ID: {app_id})"
     
     def _format_profile_creation(self, result: Dict[str, Any]) -> str:
-        """Format profile creation result"""
-        if result.get("success"):
+        """Format profile creation result
+        
+        API returns: Created profile object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is a profile object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            profile = result
+        elif "profile" in result:
             profile = result.get("profile", {})
-            name = profile.get("name", "Unknown")
-            profile_id = profile.get("id", "Unknown")
-            return f"Successfully created profile '{name}' (ID: {profile_id})"
-        return f"Failed to create profile: {result.get('error', 'Unknown error')}"
+        elif "error" in result:
+            return f"Failed to create profile: {result.get('error', 'Unknown error')}"
+        else:
+            return "Failed to create profile: Invalid response format"
+        
+        if not profile or not profile.get("id"):
+            return "Failed to create profile: No profile data returned"
+        
+        name = profile.get("name", "Unknown")
+        profile_id = profile.get("id", "Unknown")
+        return f"Successfully created profile '{name}' (ID: {profile_id})"
     
     def _format_profile_list(self, result: Dict[str, Any]) -> str:
-        """Format profile list result"""
-        profiles = result.get("profiles", [])
+        """Format profile list result
+        
+        API returns: {"results": [...]} (paginated response)
+        """
+        # SD Elements API returns profiles in a "results" array
+        profiles = result.get("results", result.get("profiles", []))
         if not profiles:
             return "No profiles found."
         
@@ -185,9 +255,19 @@ class ResponseFormatter:
         return response.strip()
     
     def _format_profile_details(self, result: Dict[str, Any]) -> str:
-        """Format profile details result"""
-        profile = result.get("profile", {})
-        if not profile:
+        """Format profile details result
+        
+        API returns: Profile object directly {"id": ..., "name": ..., ...}
+        """
+        # Check if result is a profile object (has "id" and "name") or wrapped
+        if "id" in result and "name" in result:
+            profile = result
+        elif "profile" in result:
+            profile = result.get("profile", {})
+        else:
+            return "Profile not found."
+        
+        if not profile or not profile.get("id"):
             return "Profile not found."
         
         name = profile.get("name", "Unknown")
