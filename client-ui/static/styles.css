@@ -23,13 +23,52 @@ body {
     height: calc(100vh - 40px);
 }
 
-h1 {
+.header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 20px;
-    margin: 0;
+}
+
+h1 {
+    margin: 0 0 12px 0;
     font-size: 24px;
     text-align: center;
+}
+
+.instance-info {
+    text-align: center;
+    font-size: 14px;
+    opacity: 0.9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.instance-label {
+    font-weight: 500;
+}
+
+#instance-name {
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 12px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    color: white;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.2s;
+    display: inline-block;
+}
+
+#instance-name:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    text-decoration: underline;
+}
+
+#instance-name:active {
+    transform: translateY(0);
 }
 
 #chat-container {
