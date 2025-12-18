@@ -50,7 +50,8 @@ class ResponseFormatter:
     
     def _format_project_list(self, result: Dict[str, Any]) -> str:
         """Format project list result"""
-        projects = result.get("projects", [])
+        # SD Elements API returns projects in a "results" array
+        projects = result.get("results", result.get("projects", []))
         if not projects:
             return "No projects found."
         
