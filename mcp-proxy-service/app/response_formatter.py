@@ -45,7 +45,15 @@ class ResponseFormatter:
         elif "project" in result:
             project = result.get("project", {})
         elif "error" in result:
-            return f"Failed to create project: {result.get('error', 'Unknown error')}"
+            error_msg = f"Failed to create project: {result.get('error', 'Unknown error')}"
+            # If there are available applications listed, include them
+            if "available_applications" in result:
+                apps = result.get("available_applications", [])
+                if apps:
+                    error_msg += f"\n\nAvailable applications:\n" + "\n".join(f"  - {app}" for app in apps)
+            if "suggestion" in result:
+                error_msg += f"\n\nSuggestion: {result.get('suggestion')}"
+            return error_msg
         else:
             return "Failed to create project: Invalid response format"
         

@@ -25,7 +25,13 @@ class ClaudeToolSelector:
         system_prompt = """You are a tool selector for SD Elements operations. 
 Given a user's natural language query, determine which tool should be called and with what arguments.
 
-You must respond with ONLY a JSON object in this exact format:
+IMPORTANT RULES:
+1. For create_project: If the query doesn't specify an application, you should first call list_applications to see available applications, then either:
+   - Infer the application from the project name/description (e.g., "Mobile Banking App" might match an application with "Banking" or "Mobile" in the name)
+   - Use the application_id from the most relevant application
+   - If you cannot determine which application to use, you may omit application_id and let the tool handle it (it will try to auto-detect or return available options)
+
+2. You must respond with ONLY a JSON object in this exact format:
 {
     "tool_name": "name_of_tool",
     "arguments": {
@@ -34,12 +40,14 @@ You must respond with ONLY a JSON object in this exact format:
     }
 }
 
-If no tool matches the query, return:
+3. If no tool matches the query, return:
 {
     "tool_name": null,
     "arguments": {},
     "error": "No matching tool found"
-}"""
+}
+
+4. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them."""
 
         user_prompt = f"""Available tools:
 {tools_description}
