@@ -528,35 +528,14 @@ class SDElementsAPIClient:
         
         # Build section/subsection mapping if project_id is provided
         section_mapping = {}
-        question_to_section_map = {}  # Map question_id -> section info
         if project_id is not None:
             try:
                 survey = self.get_project_survey(project_id)
                 # Iterate through sections -> questions -> answers to build mapping
-                sections = survey.get('sections', [])
-                draft = None
-                
-                # If no sections in the main survey, try the draft endpoint which may have more complete structure
-                if not sections:
-                    try:
-                        draft = self.get(f'projects/{project_id}/survey/draft/')
-                        sections = draft.get('sections', [])
-                    except Exception:
-                        pass  # Fall back to empty sections
-                
-                # Build mapping from sections and also map questions to sections
-                for section in sections:
+                for section in survey.get('sections', []):
                     section_title = section.get('title', 'Untitled Section')
                     section_id = section.get('id', '')
                     for question in section.get('questions', []):
-                        question_id = question.get('id')
-                        # Map question to section for later lookup
-                        if question_id:
-                            question_to_section_map[question_id] = {
-                                'section_title': section_title,
-                                'section_id': section_id
-                            }
-                        # Map answers directly from sections
                         for answer in question.get('answers', []):
                             answer_id = answer.get('id')
                             if answer_id:
@@ -564,35 +543,9 @@ class SDElementsAPIClient:
                                     'section_title': section_title,
                                     'section_id': section_id
                                 }
-                
-                # If we have answers that aren't in the section mapping, try to find them
-                # in the draft's flat answers list and use question-to-section mapping
-                if draft is None:
-                    try:
-                        draft = self.get(f'projects/{project_id}/survey/draft/')
-                    except Exception:
-                        draft = None
-                
-                if draft and question_to_section_map:
-                    # Check flat answers list for answers not yet mapped
-                    draft_answers = draft.get('answers', [])
-                    for answer in draft_answers:
-                        answer_id = answer.get('id')
-                        question_id = answer.get('question')
-                        # If answer not in mapping but we know its question's section
-                        if answer_id and answer_id not in section_mapping and question_id in question_to_section_map:
-                            section_info = question_to_section_map[question_id]
-                            section_mapping[answer_id] = {
-                                'section_title': section_info['section_title'],
-                                'section_id': section_info['section_id']
-                            }
-                
-            except Exception as e:
+            except Exception:
                 # If we can't fetch survey structure, continue without section info
                 # This maintains backward compatibility
-                # Log the error for debugging but don't fail
-                import logging
-                logging.debug(f"Failed to fetch survey structure for project {project_id}: {e}")
                 pass
         
         results = {

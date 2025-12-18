@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Client UI - Web interface for sending queries
+  client-ui:
+    build:
+      context: ./client-ui
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Mock Seaglass - Simulates the Seaglass service
+  mock-seaglass:
+    build:
+      context: ./mock-seaglass
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - MCP_PROXY_URL=http://mcp-proxy:8002
+    depends_on:
+      - mcp-proxy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # MCP Proxy - Orchestrates Claude and MCP server
+  mcp-proxy:
+    build:
+      context: ./mcp-proxy-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - MCP_SERVER_URL=http://sde-mcp-server:8001/mcp
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-haiku-20241022}
+      - ENABLE_TIMING=${ENABLE_TIMING:-false}
+    depends_on:
+      - sde-mcp-server
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # SDE MCP Server - Existing MCP server
+  sde-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.sde-mcp-server
+    ports:
+      - "8001:8001"
+    environment:
+      - SDE_HOST=${SDE_HOST}
+      - SDE_API_KEY=${SDE_API_KEY}
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
