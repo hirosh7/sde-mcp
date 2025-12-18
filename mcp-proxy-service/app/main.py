@@ -8,7 +8,8 @@ from app.config import Config
 from app.models import QueryRequest, QueryResponse, HealthResponse
 from app.mcp_client import MCPHTTPClient
 from app.claude_adapter import ClaudeToolSelector
-from app.response_formatter import ResponseFormatter
+from app.claude_formatter import ClaudeResponseFormatter
+from app.response_formatter import FallbackResponseFormatter
 
 # Configure logging
 logging.basicConfig(
@@ -20,13 +21,14 @@ logger = logging.getLogger(__name__)
 # Global instances
 mcp_client: MCPHTTPClient | None = None
 claude_selector: ClaudeToolSelector | None = None
-formatter: ResponseFormatter | None = None
+claude_formatter: ClaudeResponseFormatter | None = None
+fallback_formatter: FallbackResponseFormatter | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown"""
-    global mcp_client, claude_selector, formatter
+    global mcp_client, claude_selector, claude_formatter, fallback_formatter
     
     # Startup
     logger.info("Starting MCP Proxy Service...")
@@ -45,8 +47,16 @@ async def lifespan(app: FastAPI):
         )
         logger.info(f"Initialized Claude adapter with model {Config.CLAUDE_MODEL}")
         
-        # Initialize formatter
-        formatter = ResponseFormatter()
+        # Initialize Claude formatter
+        claude_formatter = ClaudeResponseFormatter(
+            api_key=Config.ANTHROPIC_API_KEY,
+            model=Config.CLAUDE_MODEL
+        )
+        logger.info("Initialized Claude response formatter")
+        
+        # Initialize fallback formatter
+        fallback_formatter = FallbackResponseFormatter()
+        logger.info("Initialized fallback response formatter")
         
         logger.info("MCP Proxy Service started successfully")
         
@@ -156,7 +166,7 @@ async def process_query(request: QueryRequest):
     2. Calls the tool via MCP
     3. Formats the result into natural language
     """
-    if not mcp_client or not claude_selector or not formatter:
+    if not mcp_client or not claude_selector or not claude_formatter or not fallback_formatter:
         raise HTTPException(status_code=503, detail="Service not fully initialized")
     
     try:
@@ -193,8 +203,17 @@ async def process_query(request: QueryRequest):
                 tool_name=tool_name
             )
         
-        # Format the result
-        formatted_response = formatter.format_tool_result(tool_name, result)
+        # Format the result using Claude, with fallback to manual formatter
+        try:
+            formatted_response = await claude_formatter.format_result(
+                tool_name=tool_name,
+                result=result,
+                original_query=request.query
+            )
+        except Exception as e:
+            logger.warning(f"Claude formatting failed, using fallback: {e}")
+            # Fallback to manual formatter
+            formatted_response = fallback_formatter.format_tool_result(tool_name, result)
         
         return QueryResponse(
             response=formatted_response,

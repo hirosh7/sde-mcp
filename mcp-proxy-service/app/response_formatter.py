@@ -3,7 +3,7 @@ import json
 from typing import Any, Dict
 
 
-class ResponseFormatter:
+class FallbackResponseFormatter:
     """Formats tool results into natural language responses"""
     
     def format_tool_result(self, tool_name: str, result: Dict[str, Any]) -> str:
