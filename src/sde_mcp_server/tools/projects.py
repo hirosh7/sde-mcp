@@ -72,13 +72,13 @@ async def get_risk_policy(ctx: Context, risk_policy_id: int, page_size: Optional
 @mcp.tool()
 async def create_project(
     ctx: Context,
-    application_id: int,
+    application_id: Optional[int] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     phase_id: Optional[int] = None,
     profile_id: Optional[str] = None,
 ) -> str:
-    """Create a new project in SD Elements. If name is not specified, prompts user to provide it. If profile is not specified, attempts to detect it from project name/description (e.g., 'mobile project' → Mobile profile). If detection fails, prompts user to select from available profiles."""
+    """Create a new project in SD Elements. If name is not specified, prompts user to provide it. If application_id is not specified, attempts to detect it from project name/description or prompts user to select from available applications. If profile is not specified, attempts to detect it from project name/description (e.g., 'mobile project' → Mobile profile). If detection fails, prompts user to select from available profiles."""
     global api_client
     if api_client is None:
         api_client = init_api_client()
@@ -98,6 +98,46 @@ async def create_project(
             name = name_result.data
         except asyncio.TimeoutError:
             return json.dumps({"error": "Elicitation timeout: project name is required. Please provide the 'name' parameter."})
+    
+    # Elicitation for application_id if not provided
+    if not application_id:
+        apps_response = api_client.list_applications({"page_size": 100})
+        apps = apps_response.get("results", [])
+        
+        if not apps:
+            return json.dumps({"error": "No applications available. Cannot create project without an application. Please specify an 'application_id' parameter."})
+        
+        # Try to detect application from project name/description
+        detected_app_id = None
+        search_text = (name or "").lower() + " " + (description or "").lower()
+        
+        for app in apps:
+            app_name = app.get("name", "").lower()
+            if app_name in search_text or search_text in app_name:
+                detected_app_id = app.get("id")
+                break
+        
+        if detected_app_id:
+            # Application detected automatically - use it
+            application_id = detected_app_id
+        else:
+            # No application detected - try to use the first application as default, or prompt
+            # In HTTP context, we can't do interactive elicitation, so we'll try the first app
+            # or return an error asking for explicit application_id
+            if len(apps) == 1:
+                application_id = apps[0].get("id")
+            else:
+                # Multiple apps available but can't detect - return error with suggestions
+                app_names = [f"{app.get('name', 'Unknown')} (ID: {app.get('id')})" for app in apps[:5]]
+                return json.dumps({
+                    "error": f"Could not determine which application to use. Please specify 'application_id' parameter.",
+                    "available_applications": app_names,
+                    "suggestion": "Use list_applications to see all available applications, then specify the application_id when creating the project."
+                })
+    
+    # Ensure application_id is set - API requires it
+    if not application_id:
+        return json.dumps({"error": "Application is required but could not be determined. Please specify an 'application_id' parameter."})
     
     # Elicitation for profile_id if not provided
     if not profile_id:
