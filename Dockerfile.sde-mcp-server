@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install uv for faster dependency management (optional but recommended)
+RUN pip install --no-cache-dir uv
+
+# Copy dependency files
+COPY pyproject.toml ./
+COPY uv.lock* ./
+
+# Install dependencies using pip (uv.lock is optional)
+RUN pip install --no-cache-dir -e .
+
+# Copy source code
+COPY src/ ./src/
+COPY README.md LICENSE ./
+
+# Expose port
+EXPOSE 8001
+
+# Run the MCP server
+CMD ["python", "-m", "sde_mcp_server"]
+
