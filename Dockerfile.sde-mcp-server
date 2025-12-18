@@ -5,16 +5,15 @@ WORKDIR /app
 # Install uv for faster dependency management (optional but recommended)
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files
-COPY pyproject.toml ./
+# Copy dependency files and README (needed for package metadata)
+COPY pyproject.toml README.md LICENSE ./
 COPY uv.lock* ./
-
-# Install dependencies using pip (uv.lock is optional)
-RUN pip install --no-cache-dir -e .
 
 # Copy source code
 COPY src/ ./src/
-COPY README.md LICENSE ./
+
+# Install dependencies using pip
+RUN pip install --no-cache-dir -e .
 
 # Expose port
 EXPOSE 8001
