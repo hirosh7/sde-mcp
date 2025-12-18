@@ -38,6 +38,22 @@ async def health():
     return {"status": "healthy", "service": "mock-seaglass"}
 
 
+@app.get("/api/v1/sde-instance")
+async def get_sde_instance():
+    """Get SDE instance information"""
+    try:
+        # Try to get SDE instance info from MCP proxy
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{MCP_PROXY_URL}/api/v1/sde-instance")
+            if response.status_code == 200:
+                return response.json()
+    except Exception:
+        pass
+    
+    # Fallback: return unknown
+    return {"instance_name": "Unknown", "instance_url": "Unknown"}
+
+
 @app.post("/api/v1/nlquery", response_model=NLQueryResponse)
 async def natural_language_query(request: NLQueryRequest):
     """Forward natural language query to MCP Proxy"""

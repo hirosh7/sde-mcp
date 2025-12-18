@@ -106,6 +106,46 @@ async def list_tools():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/sde-instance")
+async def get_sde_instance():
+    """Get SDE instance information"""
+    import os
+    from .config import Config
+    
+    # Try to get SDE_HOST from environment (passed through from docker-compose)
+    sde_host = os.getenv("SDE_HOST", "")
+    
+    if sde_host:
+        # Remove protocol if present
+        instance_url = sde_host.replace("http://", "").replace("https://", "").rstrip("/")
+        
+        # Extract instance name from URL
+        # For example: sde-ent-onyxdrift.sdelab.net -> "Onyxdrift"
+        instance_name = "SD Elements"
+        if "sdelab.net" in instance_url or "sdelements.com" in instance_url:
+            # Extract subdomain or instance identifier
+            parts = instance_url.split(".")
+            if len(parts) > 0:
+                subdomain = parts[0]
+                if subdomain.startswith("sde-"):
+                    instance_name = subdomain.replace("sde-", "").replace("-", " ").title()
+                else:
+                    instance_name = subdomain.replace("-", " ").title()
+        
+        return {
+            "instance_name": instance_name,
+            "instance_url": instance_url
+        }
+    else:
+        # Fallback: extract from MCP server URL
+        mcp_url = Config.MCP_SERVER_URL
+        instance_url = mcp_url.replace("/mcp", "").replace("http://", "").replace("https://", "")
+        return {
+            "instance_name": "SD Elements",
+            "instance_url": instance_url if instance_url else "Unknown"
+        }
+
+
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     """

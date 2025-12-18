@@ -1,5 +1,39 @@
 const SEAGLASS_URL = 'http://localhost:8003';
 
+// Load SDE instance info on page load
+async function loadInstanceInfo() {
+    try {
+        const response = await fetch(`${SEAGLASS_URL}/api/v1/sde-instance`);
+        const data = await response.json();
+        const instanceUrl = data.instance_url || '';
+        
+        const instanceNameEl = document.getElementById('instance-name');
+        if (instanceUrl && instanceUrl !== 'Unknown') {
+            // Construct full URL with https://
+            const fullUrl = instanceUrl.startsWith('http://') || instanceUrl.startsWith('https://') 
+                ? instanceUrl 
+                : `https://${instanceUrl}`;
+            
+            instanceNameEl.textContent = instanceUrl;
+            instanceNameEl.href = fullUrl;
+            instanceNameEl.title = `Open SDE instance: ${fullUrl}`;
+        } else {
+            instanceNameEl.textContent = 'Unknown';
+            instanceNameEl.href = '#';
+            instanceNameEl.title = 'Instance information unavailable';
+        }
+    } catch (error) {
+        const instanceNameEl = document.getElementById('instance-name');
+        instanceNameEl.textContent = 'Unknown';
+        instanceNameEl.href = '#';
+        instanceNameEl.title = 'Failed to load instance info';
+        console.error('Failed to load instance info:', error);
+    }
+}
+
+// Load instance info when page loads
+loadInstanceInfo();
+
 document.getElementById('send-btn').addEventListener('click', sendQuery);
 document.getElementById('query-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendQuery();
