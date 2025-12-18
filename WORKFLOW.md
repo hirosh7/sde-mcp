@@ -1,5 +1,7 @@
 # Seaglass-SDE MCP Workflow
 
+> **Note:** This document contains Mermaid diagrams. If the diagrams don't render in your markdown preview, try viewing this file on GitHub, using a Mermaid-compatible editor (like Typora, Obsidian, or VS Code with a Mermaid extension), or use the [Mermaid Live Editor](https://mermaid.live/) to view the diagram code.
+
 ## Architecture Diagram
 
 ```mermaid
