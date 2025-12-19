@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Client UI - Web interface for sending queries
   client-ui:
