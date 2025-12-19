@@ -43,9 +43,10 @@ async def lifespan(app: FastAPI):
         # Initialize Claude selector
         claude_selector = ClaudeToolSelector(
             api_key=Config.ANTHROPIC_API_KEY,
-            model=Config.CLAUDE_MODEL
+            model=Config.CLAUDE_MODEL,
+            tool_selection_model=Config.CLAUDE_TOOL_SELECTION_MODEL
         )
-        logger.info(f"Initialized Claude adapter with model {Config.CLAUDE_MODEL}")
+        logger.info(f"Initialized Claude adapter with model {Config.CLAUDE_MODEL} (tool selection: {Config.CLAUDE_TOOL_SELECTION_MODEL})")
         
         # Initialize Claude formatter
         claude_formatter = ClaudeResponseFormatter(
