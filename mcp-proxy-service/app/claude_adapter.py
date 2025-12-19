@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 class ClaudeToolSelector:
     """Uses Claude to select the appropriate tool for a natural language query"""
     
-    def __init__(self, api_key: str, model: str = "claude-3-5-haiku-20241022"):
+    def __init__(self, api_key: str, model: str = "claude-3-5-haiku-20241022", tool_selection_model: str = None):
         self.anthropic = Anthropic(api_key=api_key)
         self.model = model
+        # Use separate model for tool selection if specified, otherwise use same model
+        self.tool_selection_model = tool_selection_model or model
     
     async def select_tool(self, query: str, available_tools: list) -> Tuple[str, dict]:
         """
@@ -28,13 +30,32 @@ class ClaudeToolSelector:
         system_prompt = """You are a tool selector for SD Elements operations. 
 Given a user's natural language query, determine which tool should be called and with what arguments.
 
-IMPORTANT RULES:
-1. For create_project: If the query doesn't specify an application, you should first call list_applications to see available applications, then either:
+CRITICAL TOOL SELECTION RULES:
+
+1. LIST vs CREATE REPORT (MOST IMPORTANT):
+   - If the query asks to "list", "show", "get", "find", or "display" items → Use list_* tools
+   - If the query explicitly asks to "create a report" or "generate a report" → Use create_advanced_report
+   - NEVER use create_advanced_report for simple list queries, even if filtering is needed
+   - For filtered lists (e.g., "projects that are not risk compliant"), use list_projects and filter results client-side
+   - Examples:
+     * "list projects that are not risk compliant" → list_projects (NOT create_advanced_report)
+     * "show me all business units" → list_business_units
+     * "create a risk compliance report" → create_advanced_report
+     * "list projects created this month" → list_projects
+
+2. TOOL PRIORITY:
+   - Prefer list_* tools for retrieval queries (list, show, get all, find all)
+   - Only use create_* tools when explicitly creating something new (create project, create report)
+   - Use get_* tools for single item retrieval by ID (get project 123)
+   - Use update_* tools for modifying existing items
+   - Use delete_* tools for removing items
+
+3. For create_project: If the query doesn't specify an application, you should first call list_applications to see available applications, then either:
    - Infer the application from the project name/description (e.g., "Mobile Banking App" might match an application with "Banking" or "Mobile" in the name)
    - Use the application_id from the most relevant application
    - If you cannot determine which application to use, you may omit application_id and let the tool handle it (it will try to auto-detect or return available options)
 
-2. You must respond with ONLY a JSON object in this exact format:
+4. You must respond with ONLY a JSON object in this exact format:
 {
     "tool_name": "name_of_tool",
     "arguments": {
@@ -43,14 +64,14 @@ IMPORTANT RULES:
     }
 }
 
-3. If no tool matches the query, return:
+5. If no tool matches the query, return:
 {
     "tool_name": null,
     "arguments": {},
     "error": "No matching tool found"
 }
 
-4. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them."""
+6. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them."""
 
         user_prompt = f"""Available tools:
 {tools_description}
@@ -61,7 +82,7 @@ Respond with JSON only:"""
 
         try:
             response = self.anthropic.messages.create(
-                model=self.model,
+                model=self.tool_selection_model,
                 max_tokens=1000,
                 system=system_prompt,
                 messages=[
@@ -137,13 +158,37 @@ Respond with JSON only:"""
             raise ValueError(error_msg)
     
     def _format_tools_for_claude(self, tools: list) -> str:
-        """Format tools list for Claude prompt"""
-        formatted = []
+        """Format tools list for Claude prompt, grouped by category"""
+        # Categorize tools
+        categories = {
+            "LIST": [],
+            "GET": [],
+            "CREATE": [],
+            "UPDATE": [],
+            "DELETE": [],
+            "OTHER": []
+        }
+        
         for tool in tools:
             name = tool.get("name", "")
             description = tool.get("description", "")
             schema = tool.get("input_schema", {})
             
+            # Categorize tool
+            if name.startswith("list_"):
+                category = "LIST"
+            elif name.startswith("get_"):
+                category = "GET"
+            elif name.startswith("create_"):
+                category = "CREATE"
+            elif name.startswith("update_"):
+                category = "UPDATE"
+            elif name.startswith("delete_"):
+                category = "DELETE"
+            else:
+                category = "OTHER"
+            
+            # Format tool info
             tool_info = f"- {name}: {description}"
             if schema and "properties" in schema:
                 props = schema["properties"]
@@ -155,7 +200,24 @@ Respond with JSON only:"""
                     req_marker = " (required)" if prop_name in required else ""
                     tool_info += f"\n    - {prop_name} ({param_type}){req_marker}: {param_desc}"
             
-            formatted.append(tool_info)
+            categories[category].append(tool_info)
         
-        return "\n\n".join(formatted)
+        # Format by category with headers
+        formatted_sections = []
+        category_labels = {
+            "LIST": "=== LIST TOOLS (for retrieving multiple items) ===",
+            "GET": "=== GET TOOLS (for retrieving single items by ID) ===",
+            "CREATE": "=== CREATE TOOLS (for creating new items) ===",
+            "UPDATE": "=== UPDATE TOOLS (for modifying existing items) ===",
+            "DELETE": "=== DELETE TOOLS (for removing items) ===",
+            "OTHER": "=== OTHER TOOLS ==="
+        }
+        
+        for category, label in category_labels.items():
+            if categories[category]:
+                formatted_sections.append(label)
+                formatted_sections.extend(categories[category])
+                formatted_sections.append("")  # Empty line between categories
+        
+        return "\n".join(formatted_sections)
 
