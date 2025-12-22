@@ -46,11 +46,26 @@ class ClaudeResponseFormatter:
                     "content": conv.get("response", "")
                 })
         
+        # Check if result contains both applications and projects (combined result)
+        has_applications = isinstance(result, dict) and ("applications" in result or "results" in result)
+        has_projects = isinstance(result, dict) and "projects" in result
+        is_combined = has_applications and has_projects
+        
         # Format the JSON result for the prompt
         result_json = json.dumps(result, indent=2)
         
         # Add current formatting request
-        user_prompt = f"""Tool: {tool_name}
+        if is_combined:
+            user_prompt = f"""Tool: {tool_name} (combined with list_projects)
+Original user query: {original_query}
+
+Tool result (JSON) - Contains both applications and projects:
+{result_json}
+
+Format this result into natural language. The result contains BOTH applications and projects. 
+Consider the conversation history above for context. Filter both applications and projects by the business unit mentioned in the conversation history."""
+        else:
+            user_prompt = f"""Tool: {tool_name}
 Original user query: {original_query}
 
 Tool result (JSON):
@@ -73,6 +88,21 @@ Guidelines:
 - Format dates/timestamps in a readable way
 - Include relevant URLs when available
 - Reference previous operations when relevant (e.g., "As mentioned earlier, 3 answers were deselected")
+- FILTERING: When the query asks for items "for" or "associated with" a specific business unit from conversation history:
+  * Filter the results to only show items matching that business unit ID
+  * Extract the business_unit_id from conversation history (e.g., "second BU" = second item from list_business_units)
+  * Only include applications/projects where business_unit.id matches the target BU
+- MULTI-PART QUERIES: If the result contains BOTH applications AND projects (check for "applications" and "projects" keys):
+  * Format both sections clearly: "Applications:" and "Projects:"
+  * Filter both lists by the business unit from conversation history
+  * Show count for each section
+  * If no items match the filter, clearly state that (e.g., "No applications found for this BU" or "No projects found for this BU")
+  * Example structure:
+    Applications for [BU Name]:
+    1. App Name (ID: X)...
+    
+    Projects for [BU Name]:
+    1. Project Name (ID: Y)...
 
 Respond with ONLY the formatted natural language text, no additional commentary."""
         

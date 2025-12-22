@@ -93,7 +93,17 @@ CRITICAL TOOL SELECTION RULES:
    - Use the application_id from the most relevant application
    - If you cannot determine which application to use, you may omit application_id and let the tool handle it (it will try to auto-detect or return available options)
 
-4. You must respond with ONLY a JSON object in this exact format:
+4. CRITICAL: PARAMETER RESTRICTIONS - DO NOT PASS INVALID PARAMETERS:
+   - list_applications does NOT accept business_unit_id parameter - call with empty arguments {}
+   - list_projects does NOT accept business_unit_id parameter - call with empty arguments {}
+   - When user asks for items "for" or "associated with" a business unit from conversation history:
+     * Call list_applications or list_projects with NO arguments (empty object {})
+     * The response formatter will filter results based on conversation history automatically
+     * DO NOT try to extract business_unit_id and pass it - this causes validation errors
+   - Example: "applications for the second BU" → {"tool_name": "list_applications", "arguments": {}}
+   - Example: "projects for Space Freight" → {"tool_name": "list_projects", "arguments": {}}
+
+5. You must respond with ONLY a JSON object in this exact format:
 {
     "tool_name": "name_of_tool",
     "arguments": {
@@ -109,7 +119,13 @@ CRITICAL TOOL SELECTION RULES:
     "error": "No matching tool found"
 }
 
-6. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them."""
+6. MULTI-PART QUERIES:
+   - If the query asks for both "applications AND projects" (or similar combinations), you should call the FIRST relevant tool
+   - The response formatter will handle filtering based on conversation history
+   - Example: "applications and projects for BU X" → call list_applications first (formatter will note projects are also needed)
+   - Note: The system currently processes one tool call per query, so prioritize the primary request
+
+7. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them. DO NOT add parameters that the tool doesn't accept (like business_unit_id for list_applications)."""
 
         try:
             response = self.anthropic.messages.create(

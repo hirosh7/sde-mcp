@@ -205,6 +205,12 @@ async def process_query(request: QueryRequest):
                 session_id=session_id
             )
         
+        # Check if query asks for both applications and projects
+        query_lower = request.query.lower()
+        needs_applications = any(word in query_lower for word in ["application", "applications", "app", "apps"])
+        needs_projects = any(word in query_lower for word in ["project", "projects"])
+        needs_both = needs_applications and needs_projects
+        
         # Pass conversation history to Claude selector
         try:
             tool_name, arguments = await claude_selector.select_tool(
@@ -221,7 +227,7 @@ async def process_query(request: QueryRequest):
                 session_id=session_id
             )
         
-        # Call the tool
+        # Call the primary tool
         try:
             result = await mcp_client.call_tool(tool_name, arguments)
         except Exception as e:
@@ -233,6 +239,44 @@ async def process_query(request: QueryRequest):
                 tool_name=tool_name,
                 session_id=session_id
             )
+        
+        # If query asks for both applications and projects, also fetch the other
+        projects_result = None
+        if needs_both:
+            logger.info(f"Query asks for both applications and projects, tool_name={tool_name}")
+            if tool_name == "list_applications":
+                # Also fetch projects
+                try:
+                    logger.info("Fetching projects for combined result...")
+                    projects_result = await mcp_client.call_tool("list_projects", {})
+                    logger.info(f"Successfully fetched projects: {type(projects_result)}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch projects: {e}")
+            elif tool_name == "list_projects":
+                # Also fetch applications
+                try:
+                    logger.info("Fetching applications for combined result...")
+                    applications_result = await mcp_client.call_tool("list_applications", {})
+                    # Combine results
+                    if isinstance(result, dict) and isinstance(applications_result, dict):
+                        result = {
+                            "projects": result.get("results", result.get("projects", [])),
+                            "applications": applications_result.get("results", applications_result.get("applications", []))
+                        }
+                        logger.info("Combined projects and applications results")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch applications: {e}")
+        
+        # Combine results if we fetched both
+        if needs_both and projects_result and tool_name == "list_applications":
+            if isinstance(result, dict) and isinstance(projects_result, dict):
+                applications_data = result.get("results", result.get("applications", []))
+                projects_data = projects_result.get("results", projects_result.get("projects", []))
+                result = {
+                    "applications": applications_data,
+                    "projects": projects_data
+                }
+                logger.info(f"Combined result: {len(applications_data)} applications, {len(projects_data)} projects")
         
         # Pass conversation history to Claude formatter
         try:
