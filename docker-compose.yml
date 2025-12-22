@@ -25,6 +25,16 @@ services:
       - app-network
     restart: unless-stopped
 
+  # Redis - In-memory storage for session context
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    restart: unless-stopped
+    # Note: Persistence (RDB/AOF) can be added later if needed
+
   # MCP Proxy - Orchestrates Claude and MCP server
   mcp-proxy:
     build:
@@ -38,8 +48,13 @@ services:
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-haiku-20241022}
       - ENABLE_TIMING=${ENABLE_TIMING:-false}
       - SDE_HOST=${SDE_HOST}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - SESSION_TTL=86400
     depends_on:
       - sde-mcp-server
+      - redis
     networks:
       - app-network
     restart: unless-stopped

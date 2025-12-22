@@ -1,7 +1,7 @@
 """Claude adapter for tool selection"""
 import json
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
@@ -16,18 +16,56 @@ class ClaudeToolSelector:
         # Use separate model for tool selection if specified, otherwise use same model
         self.tool_selection_model = tool_selection_model or model
     
-    async def select_tool(self, query: str, available_tools: list) -> Tuple[str, dict]:
+    async def select_tool(
+        self, 
+        query: str, 
+        available_tools: list,
+        conversation_history: Optional[List[Dict]] = None
+    ) -> Tuple[str, dict]:
         """
         Use Claude to determine which tool to call and with what arguments.
+        
+        Args:
+            query: The user's natural language query
+            available_tools: List of available tools
+            conversation_history: Optional list of previous conversation turns
         
         Returns:
             Tuple of (tool_name, arguments_dict)
         """
+        # Build messages list with conversation history
+        messages = []
+        
+        # Add previous conversation history
+        if conversation_history:
+            for conv in conversation_history:
+                messages.append({
+                    "role": "user",
+                    "content": conv.get("query", "")
+                })
+                messages.append({
+                    "role": "assistant",
+                    "content": conv.get("response", "")
+                })
+        
         # Format tools for Claude
         tools_description = self._format_tools_for_claude(available_tools)
         
+        # Add current query
+        user_prompt = f"""Available tools:
+{tools_description}
+
+User query: {query}
+
+Respond with JSON only:"""
+        
+        messages.append({"role": "user", "content": user_prompt})
+        
         # Create prompt for Claude
-        system_prompt = """You are a tool selector for SD Elements operations. 
+        system_prompt = """You are a tool selector for SD Elements operations.
+You have access to the conversation history above, which shows previous questions and answers in this session.
+Use this context to better understand follow-up questions and references to previous operations.
+
 Given a user's natural language query, determine which tool should be called and with what arguments.
 
 CRITICAL TOOL SELECTION RULES:
@@ -73,21 +111,12 @@ CRITICAL TOOL SELECTION RULES:
 
 6. Only provide arguments that are explicitly mentioned in the query or that you can reasonably infer. Do not make up values for required parameters unless you can infer them."""
 
-        user_prompt = f"""Available tools:
-{tools_description}
-
-User query: {query}
-
-Respond with JSON only:"""
-
         try:
             response = self.anthropic.messages.create(
                 model=self.tool_selection_model,
                 max_tokens=1000,
                 system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages
             )
             
             # Extract JSON from response

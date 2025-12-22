@@ -22,6 +22,15 @@ class Config:
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8002"))
     
+    # Redis Configuration
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+    
+    # Session Configuration
+    SESSION_TTL = int(os.getenv("SESSION_TTL", "86400"))  # 24 hours in seconds
+    SESSION_MAX_CONVERSATIONS = int(os.getenv("SESSION_MAX_CONVERSATIONS", "50"))
+    
     @classmethod
     def validate(cls):
         """Validate required configuration"""

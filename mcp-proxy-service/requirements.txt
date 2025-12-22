@@ -4,4 +4,5 @@ anthropic>=0.18.0
 python-dotenv>=1.0.0
 mcp>=1.0.0
 pydantic>=2.0.0
+redis>=5.0.0
 

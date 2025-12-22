@@ -7,7 +7,7 @@ The MCP proxy service currently processes each query independently with no memor
 ## Solution Overview
 
 Implement per-session context retention that:
-1. Stores session context in Docker MinIO (S3-compatible object storage)
+1. Stores session context in Docker Redis (in-memory key-value store)
 2. Retrieves and provides conversation history to Claude on each query
 3. Enables Claude to respond with awareness of previous questions and answers
 
@@ -17,25 +17,25 @@ Implement per-session context retention that:
 sequenceDiagram
     participant User
     participant Proxy as MCP Proxy
-    participant MinIO as MinIO Storage
+    participant Redis as Redis Storage
     participant Claude as Claude API
     participant MCP as MCP Server
 
     User->>Proxy: Query 1 (session_id: abc123)
-    Proxy->>MinIO: Retrieve session context (if exists)
-    MinIO-->>Proxy: Previous Q&A history
+    Proxy->>Redis: Retrieve session context (if exists)
+    Redis-->>Proxy: Previous Q&A history
     Proxy->>Claude: Query + Conversation History
     Claude-->>Proxy: Tool selection
     Proxy->>MCP: Execute tool
     MCP-->>Proxy: Result
     Proxy->>Claude: Format result + History
     Claude-->>Proxy: Formatted response
-    Proxy->>MinIO: Store Q&A pair
+    Proxy->>Redis: Store Q&A pair
     Proxy-->>User: Response + session_id
 
     User->>Proxy: Query 2 (session_id: abc123)
-    Proxy->>MinIO: Retrieve session context
-    MinIO-->>Proxy: Previous Q&A history
+    Proxy->>Redis: Retrieve session context
+    Redis-->>Proxy: Previous Q&A history
     Note over Proxy: Claude now knows previous context
     Proxy->>Claude: Query + Full Conversation History
     Claude-->>Proxy: Context-aware response
@@ -43,104 +43,81 @@ sequenceDiagram
 
 ## Implementation Steps
 
-### 1. Add MinIO to Docker Compose
+### 1. Add Redis to Docker Compose
 
 **File: `docker-compose.yml`**
 
-Add MinIO service:
+Add Redis service:
 ```yaml
-  # MinIO - Object storage for session context
-  minio:
-    image: minio/minio:latest
+  # Redis - In-memory storage for session context
+  redis:
+    image: redis:7-alpine
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-data:/data
+      - "6379:6379"
     networks:
       - app-network
     restart: unless-stopped
-
-volumes:
-  minio-data:
+    # Note: Persistence (RDB/AOF) can be added later if needed
 ```
 
-Update `mcp-proxy` service to include MinIO environment variables:
+Update `mcp-proxy` service to include Redis environment variables:
 ```yaml
     environment:
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET_NAME=sessions
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - SESSION_TTL=86400
     depends_on:
       - sde-mcp-server
-      - minio
+      - redis
 ```
 
-### 2. Create MinIO Storage Client
+### 2. Create Redis Storage Client
 
-**File: `mcp-proxy-service/app/minio_client.py`** (new)
+**File: `mcp-proxy-service/app/redis_client.py`** (new)
 
-Create MinIO client wrapper for session storage:
+Create Redis client wrapper for session storage:
 ```python
-from minio import Minio
-from minio.error import S3Error
+import redis.asyncio as redis
 import json
-import io
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
 
-class MinIOSessionStorage:
-    """Store and retrieve session context from MinIO"""
+class RedisSessionStorage:
+    """Store and retrieve session context from Redis"""
     
-    def __init__(self, endpoint: str, access_key: str, secret_key: str, bucket_name: str):
-        self.client = Minio(
-            endpoint.replace("http://", "").replace("https://", ""),
-            access_key=access_key,
-            secret_key=secret_key,
-            secure=False
+    def __init__(self, host: str, port: int, db: int = 0, session_ttl: int = 86400):
+        self.client = redis.Redis(
+            host=host,
+            port=port,
+            db=db,
+            decode_responses=True
         )
-        self.bucket_name = bucket_name
-        self._ensure_bucket_exists()
+        self.session_ttl = session_ttl  # Default 24 hours
     
-    def _ensure_bucket_exists(self):
-        """Create bucket if it doesn't exist"""
-        if not self.client.bucket_exists(self.bucket_name):
-            self.client.make_bucket(self.bucket_name)
+    async def get_session_context(self, session_id: str) -> Optional[Dict]:
+        """Retrieve session context from Redis"""
+        key = f"session:{session_id}"
+        data = await self.client.get(key)
+        if data:
+            return json.loads(data)
+        return None
     
-    def save_session_context(self, session_id: str, context: Dict) -> None:
-        """Save session context to MinIO"""
-        object_name = f"{session_id}/context.json"
-        data = json.dumps(context, default=str).encode('utf-8')
-        self.client.put_object(
-            self.bucket_name,
-            object_name,
-            data=io.BytesIO(data),
-            length=len(data),
-            content_type='application/json'
-        )
+    async def save_session_context(self, session_id: str, context: Dict) -> None:
+        """Save session context to Redis with TTL"""
+        key = f"session:{session_id}"
+        data = json.dumps(context, default=str)
+        await self.client.setex(key, self.session_ttl, data)
     
-    def get_session_context(self, session_id: str) -> Optional[Dict]:
-        """Retrieve session context from MinIO"""
-        object_name = f"{session_id}/context.json"
-        try:
-            response = self.client.get_object(self.bucket_name, object_name)
-            data = json.loads(response.read())
-            response.close()
-            response.release_conn()
-            return data
-        except S3Error as e:
-            if e.code == 'NoSuchKey':
-                return None
-            raise
-    
-    def append_conversation(self, session_id: str, query: str, response: str, metadata: Dict) -> None:
+    async def append_conversation(
+        self, 
+        session_id: str, 
+        query: str, 
+        response: str, 
+        metadata: Dict
+    ) -> None:
         """Append Q&A pair to session conversation history"""
-        context = self.get_session_context(session_id) or {
+        context = await self.get_session_context(session_id) or {
             "session_id": session_id,
             "created_at": datetime.utcnow().isoformat(),
             "conversations": []
@@ -158,22 +135,31 @@ class MinIOSessionStorage:
             context["conversations"] = context["conversations"][-50:]
         
         context["updated_at"] = datetime.utcnow().isoformat()
-        self.save_session_context(session_id, context)
+        await self.save_session_context(session_id, context)
+    
+    async def delete_session(self, session_id: str) -> None:
+        """Delete a session from Redis"""
+        key = f"session:{session_id}"
+        await self.client.delete(key)
+    
+    async def close(self) -> None:
+        """Close Redis connection"""
+        await self.client.close()
 ```
 
 ### 3. Update Configuration
 
 **File: `mcp-proxy-service/app/config.py`**
 
-Add MinIO configuration:
+Add Redis configuration:
 ```python
-    # MinIO Configuration
-    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "sessions")
+    # Redis Configuration
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     
     # Session Configuration
+    SESSION_TTL = int(os.getenv("SESSION_TTL", "86400"))  # 24 hours in seconds
     SESSION_MAX_CONVERSATIONS = int(os.getenv("SESSION_MAX_CONVERSATIONS", "50"))
 ```
 
@@ -376,34 +362,40 @@ Respond with ONLY the formatted natural language text, no additional commentary.
 
 Modify `/api/v1/query` endpoint:
 ```python
-from app.minio_client import MinIOSessionStorage
+from app.redis_client import RedisSessionStorage
 import uuid
 
-# Initialize MinIO storage in lifespan
-minio_storage: MinIOSessionStorage | None = None
+# Initialize Redis storage in lifespan
+redis_storage: RedisSessionStorage | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mcp_client, claude_selector, claude_formatter, fallback_formatter, minio_storage
+    global mcp_client, claude_selector, claude_formatter, fallback_formatter, redis_storage
     
     # ... existing initialization ...
     
-    # Initialize MinIO storage
-    minio_storage = MinIOSessionStorage(
-        endpoint=Config.MINIO_ENDPOINT,
-        access_key=Config.MINIO_ACCESS_KEY,
-        secret_key=Config.MINIO_SECRET_KEY,
-        bucket_name=Config.MINIO_BUCKET_NAME
+    # Initialize Redis storage
+    redis_storage = RedisSessionStorage(
+        host=Config.REDIS_HOST,
+        port=Config.REDIS_PORT,
+        db=Config.REDIS_DB,
+        session_ttl=Config.SESSION_TTL
     )
-    logger.info(f"Initialized MinIO storage at {Config.MINIO_ENDPOINT}")
+    logger.info(f"Initialized Redis storage at {Config.REDIS_HOST}:{Config.REDIS_PORT}")
+    
+    yield
+    
+    # Cleanup
+    if redis_storage:
+        await redis_storage.close()
 
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     # Generate or use provided session_id
     session_id = request.session_id or str(uuid.uuid4())
     
-    # Retrieve conversation history from MinIO
-    session_context = minio_storage.get_session_context(session_id) if minio_storage else None
+    # Retrieve conversation history from Redis
+    session_context = await redis_storage.get_session_context(session_id) if redis_storage else None
     conversation_history = session_context.get("conversations", []) if session_context else []
     
     # Get available tools
@@ -458,9 +450,9 @@ async def process_query(request: QueryRequest):
         logger.warning(f"Claude formatting failed, using fallback: {e}")
         formatted_response = fallback_formatter.format_tool_result(tool_name, result)
     
-    # Store conversation in MinIO
-    if minio_storage:
-        minio_storage.append_conversation(
+    # Store conversation in Redis
+    if redis_storage:
+        await redis_storage.append_conversation(
             session_id=session_id,
             query=request.query,
             response=formatted_response,
@@ -482,40 +474,309 @@ async def process_query(request: QueryRequest):
 
 **File: `mcp-proxy-service/requirements.txt`**
 
-Add MinIO client:
+Add Redis client:
 ```
-minio>=7.2.0
+redis>=5.0.0
 ```
 
 ### 9. Update Environment Example
 
 **File: `env.example`**
 
-Add MinIO configuration:
+Add Redis configuration:
 ```
-# MinIO Configuration (for session context storage)
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_NAME=sessions
+# Redis Configuration (for session context storage)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+SESSION_TTL=86400
 SESSION_MAX_CONVERSATIONS=50
+```
+
+### 10. Add Tests for Redis Client
+
+**File: `mcp-proxy-service/tests/test_redis_client.py`** (new)
+
+Create comprehensive tests for RedisSessionStorage:
+```python
+import pytest
+import asyncio
+from datetime import datetime
+from app.redis_client import RedisSessionStorage
+
+# Use a separate Redis DB for testing (e.g., DB 1)
+TEST_REDIS_HOST = "localhost"
+TEST_REDIS_PORT = 6379
+TEST_REDIS_DB = 1
+TEST_SESSION_TTL = 60  # 1 minute for testing
+
+@pytest.fixture
+async def redis_storage():
+    """Create Redis storage instance for testing"""
+    storage = RedisSessionStorage(
+        host=TEST_REDIS_HOST,
+        port=TEST_REDIS_PORT,
+        db=TEST_REDIS_DB,
+        session_ttl=TEST_SESSION_TTL
+    )
+    yield storage
+    # Cleanup: close connection after tests
+    await storage.close()
+
+@pytest.fixture
+async def cleanup_test_sessions(redis_storage):
+    """Cleanup test sessions before and after each test"""
+    # Cleanup before test
+    yield
+    # Cleanup after test - delete all test sessions
+    # Note: In a real scenario, you might want to use a test prefix
+    pass
+
+@pytest.mark.asyncio
+async def test_get_session_context_nonexistent(redis_storage):
+    """Test retrieving non-existent session returns None"""
+    result = await redis_storage.get_session_context("nonexistent-session")
+    assert result is None
+
+@pytest.mark.asyncio
+async def test_save_and_get_session_context(redis_storage):
+    """Test saving and retrieving session context"""
+    session_id = "test-session-1"
+    context = {
+        "session_id": session_id,
+        "created_at": datetime.utcnow().isoformat(),
+        "conversations": []
+    }
+    
+    await redis_storage.save_session_context(session_id, context)
+    retrieved = await redis_storage.get_session_context(session_id)
+    
+    assert retrieved is not None
+    assert retrieved["session_id"] == session_id
+    assert "created_at" in retrieved
+    assert retrieved["conversations"] == []
+    
+    # Cleanup
+    await redis_storage.delete_session(session_id)
+
+@pytest.mark.asyncio
+async def test_append_conversation_new_session(redis_storage):
+    """Test appending conversation to a new session"""
+    session_id = "test-session-2"
+    query = "List all projects"
+    response = "Found 2 projects"
+    metadata = {"tool_name": "list_projects", "success": True}
+    
+    await redis_storage.append_conversation(session_id, query, response, metadata)
+    context = await redis_storage.get_session_context(session_id)
+    
+    assert context is not None
+    assert len(context["conversations"]) == 1
+    assert context["conversations"][0]["query"] == query
+    assert context["conversations"][0]["response"] == response
+    assert context["conversations"][0]["metadata"] == metadata
+    assert "timestamp" in context["conversations"][0]
+    
+    # Cleanup
+    await redis_storage.delete_session(session_id)
+
+@pytest.mark.asyncio
+async def test_append_conversation_existing_session(redis_storage):
+    """Test appending multiple conversations to existing session"""
+    session_id = "test-session-3"
+    
+    # First conversation
+    await redis_storage.append_conversation(
+        session_id, 
+        "Query 1", 
+        "Response 1", 
+        {"tool": "tool1"}
+    )
+    
+    # Second conversation
+    await redis_storage.append_conversation(
+        session_id, 
+        "Query 2", 
+        "Response 2", 
+        {"tool": "tool2"}
+    )
+    
+    context = await redis_storage.get_session_context(session_id)
+    
+    assert context is not None
+    assert len(context["conversations"]) == 2
+    assert context["conversations"][0]["query"] == "Query 1"
+    assert context["conversations"][1]["query"] == "Query 2"
+    
+    # Cleanup
+    await redis_storage.delete_session(session_id)
+
+@pytest.mark.asyncio
+async def test_conversation_limit(redis_storage):
+    """Test that conversations are limited to max (50)"""
+    session_id = "test-session-4"
+    
+    # Add 55 conversations (should keep only last 50)
+    for i in range(55):
+        await redis_storage.append_conversation(
+            session_id,
+            f"Query {i}",
+            f"Response {i}",
+            {"index": i}
+        )
+    
+    context = await redis_storage.get_session_context(session_id)
+    
+    assert context is not None
+    assert len(context["conversations"]) == 50
+    # Should keep the last 50 (indices 5-54)
+    assert context["conversations"][0]["query"] == "Query 5"
+    assert context["conversations"][-1]["query"] == "Query 54"
+    
+    # Cleanup
+    await redis_storage.delete_session(session_id)
+
+@pytest.mark.asyncio
+async def test_session_isolation(redis_storage):
+    """Test that different sessions don't interfere with each other"""
+    session_id_1 = "test-session-5"
+    session_id_2 = "test-session-6"
+    
+    await redis_storage.append_conversation(
+        session_id_1, 
+        "Session 1 Query", 
+        "Session 1 Response", 
+        {}
+    )
+    
+    await redis_storage.append_conversation(
+        session_id_2, 
+        "Session 2 Query", 
+        "Session 2 Response", 
+        {}
+    )
+    
+    context_1 = await redis_storage.get_session_context(session_id_1)
+    context_2 = await redis_storage.get_session_context(session_id_2)
+    
+    assert context_1 is not None
+    assert context_2 is not None
+    assert len(context_1["conversations"]) == 1
+    assert len(context_2["conversations"]) == 1
+    assert context_1["conversations"][0]["query"] == "Session 1 Query"
+    assert context_2["conversations"][0]["query"] == "Session 2 Query"
+    
+    # Cleanup
+    await redis_storage.delete_session(session_id_1)
+    await redis_storage.delete_session(session_id_2)
+
+@pytest.mark.asyncio
+async def test_delete_session(redis_storage):
+    """Test deleting a session"""
+    session_id = "test-session-7"
+    
+    await redis_storage.append_conversation(
+        session_id, 
+        "Test Query", 
+        "Test Response", 
+        {}
+    )
+    
+    # Verify session exists
+    context = await redis_storage.get_session_context(session_id)
+    assert context is not None
+    
+    # Delete session
+    await redis_storage.delete_session(session_id)
+    
+    # Verify session is deleted
+    context_after = await redis_storage.get_session_context(session_id)
+    assert context_after is None
+
+@pytest.mark.asyncio
+async def test_ttl_expiration(redis_storage):
+    """Test that sessions expire after TTL"""
+    session_id = "test-session-8"
+    short_ttl_storage = RedisSessionStorage(
+        host=TEST_REDIS_HOST,
+        port=TEST_REDIS_PORT,
+        db=TEST_REDIS_DB,
+        session_ttl=2  # 2 seconds
+    )
+    
+    await short_ttl_storage.append_conversation(
+        session_id, 
+        "Test Query", 
+        "Test Response", 
+        {}
+    )
+    
+    # Verify session exists immediately
+    context = await short_ttl_storage.get_session_context(session_id)
+    assert context is not None
+    
+    # Wait for TTL to expire
+    await asyncio.sleep(3)
+    
+    # Verify session has expired
+    context_after = await short_ttl_storage.get_session_context(session_id)
+    assert context_after is None
+    
+    await short_ttl_storage.close()
+```
+
+**File: `mcp-proxy-service/tests/conftest.py`** (update if exists, or create)
+
+Add pytest configuration for async tests:
+```python
+import pytest
+
+# Configure pytest for async tests
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    import asyncio
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+```
+
+**File: `mcp-proxy-service/pytest.ini`** (create if doesn't exist)
+
+Add pytest configuration:
+```ini
+[pytest]
+asyncio_mode = auto
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+```
+
+**File: `mcp-proxy-service/requirements-dev.txt`** (update or create)
+
+Add test dependencies:
+```
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
 ```
 
 ## Key Changes Summary
 
-1. **MinIO Integration**: Replace in-memory storage with persistent MinIO object storage
-2. **Conversation History**: Store Q&A pairs per session in MinIO
+1. **Redis Integration**: Replace MinIO with Redis for in-memory session storage
+2. **Conversation History**: Store Q&A pairs per session in Redis with TTL
 3. **Claude Context**: Pass conversation history to both tool selection and response formatting
 4. **Session Management**: Generate/use session_id, retrieve context before each query
-5. **Persistent Storage**: Context survives service restarts via MinIO
+5. **Automatic Expiration**: Sessions expire after TTL (default 24 hours)
 
 ## Benefits
 
-- **Persistent Context**: Survives service restarts
-- **Scalable Storage**: MinIO handles large volumes of session data
+- **Fast Access**: Redis provides sub-millisecond latency for session data
+- **Automatic Cleanup**: TTL ensures old sessions are automatically removed
 - **Context-Aware Responses**: Claude understands previous Q&A
 - **Session Isolation**: Each session maintains its own conversation history
 - **Docker-Based**: Easy to deploy and manage with docker-compose
+- **Simple Setup**: No persistence configuration needed initially
 
 ## Example Usage
 
@@ -537,31 +798,60 @@ Response: "The following answers were deselected: A2297 (Java), A2298 (Ruby), A2
 ## Files to Modify
 
 1. **New Files:**
-   - `mcp-proxy-service/app/minio_client.py` (MinIO storage client)
+   - `mcp-proxy-service/app/redis_client.py` (Redis storage client)
+   - `mcp-proxy-service/tests/test_redis_client.py` (Redis client unit tests)
+   - `mcp-proxy-service/pytest.ini` (Pytest configuration)
 
 2. **Modified Files:**
-   - `docker-compose.yml` (add MinIO service)
+   - `docker-compose.yml` (add Redis service)
    - `mcp-proxy-service/app/models.py` (add session_id fields)
-   - `mcp-proxy-service/app/main.py` (integrate MinIO, pass context to Claude)
-   - `mcp-proxy-service/app/config.py` (add MinIO config)
+   - `mcp-proxy-service/app/main.py` (integrate Redis, pass context to Claude)
+   - `mcp-proxy-service/app/config.py` (add Redis config)
    - `mcp-proxy-service/app/claude_adapter.py` (accept conversation_history)
    - `mcp-proxy-service/app/claude_formatter.py` (accept conversation_history)
-   - `mcp-proxy-service/requirements.txt` (add minio package)
-   - `env.example` (add MinIO configuration)
+   - `mcp-proxy-service/requirements.txt` (add redis package)
+   - `mcp-proxy-service/requirements-dev.txt` (add pytest and pytest-asyncio)
+   - `mcp-proxy-service/tests/conftest.py` (add async test configuration)
+   - `env.example` (add Redis configuration)
 
 ## Testing Strategy
 
-1. Start MinIO service: `docker-compose up minio`
-2. Test session creation and storage
-3. Test conversation history retrieval
+### Unit Tests for Redis Client
+
+Run Redis client unit tests:
+```bash
+# Ensure Redis is running
+docker-compose up -d redis
+
+# Run tests
+cd mcp-proxy-service
+pytest tests/test_redis_client.py -v
+```
+
+The test suite covers:
+- Session context retrieval (nonexistent and existing)
+- Saving and retrieving session context
+- Appending conversations to new and existing sessions
+- Conversation limit enforcement (max 50)
+- Session isolation (different sessions don't interfere)
+- Session deletion
+- TTL expiration
+
+### Integration Tests
+
+1. Start Redis service: `docker-compose up redis`
+2. Test session creation and storage via API
+3. Test conversation history retrieval via API
 4. Verify Claude receives and uses conversation history
 5. Test session isolation (different sessions don't interfere)
-6. Test persistence across service restarts
+6. Test TTL expiration (sessions expire after configured time)
 
 ## Future Enhancements
 
-- Session expiration/TTL cleanup
+- **Persistence Options**: Add RDB snapshots or AOF logging for data durability across restarts
+- Session expiration/TTL cleanup (already implemented via TTL)
 - Session sharing across multiple users (with authentication)
 - Export session history for audit/debugging
 - Session search and analytics
 - Compression for large conversation histories
+- Redis Cluster support for high availability
