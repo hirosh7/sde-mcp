@@ -94,15 +94,17 @@ ipython_config.py
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow
 __pypackages__/
 
-# Celery stuff:
-celerybeat-schedule
-celerybeat.pid
+# Dependency directories
+node_modules/
+jspm_packages/
 
 # SageMath parsed files
 *.sage.py
 
 # Environments
 .env
+.env.test
+.env.production
 .venv*
 env/
 venv/
@@ -142,6 +144,29 @@ mcp.json
 *~
 *.code-workspace
 
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# built artifacts
+build/
+dist/
+*.mcpb
+
 # OS
 .DS_Store
-Thumbs.db .cursor/mcp.json
+Thumbs.db
+
+.cursor/mcp.json
