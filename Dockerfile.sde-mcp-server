@@ -5,15 +5,14 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm ci
-
-# Copy TypeScript source and config files
-COPY src/ ./src/
+# Copy TypeScript config files (needed for prepare script during npm ci)
 COPY tsconfig.json tsconfig.build.json ./
 
-# Build TypeScript code
-RUN npm run build
+# Copy source code (needed for build during npm ci)
+COPY src/ ./src/
+
+# Install dependencies (this will trigger prepare -> build)
+RUN npm ci
 
 # Copy any additional needed files
 COPY README.md LICENSE ./
