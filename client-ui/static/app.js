@@ -84,6 +84,30 @@ async function sendQuery() {
     }
 }
 
+function linkifyUrls(text) {
+    // Escape HTML to prevent XSS
+    const escapeHtml = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+    
+    // Split by URLs and rebuild with links
+    const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+    const parts = text.split(urlRegex);
+    
+    return parts.map(part => {
+        if (urlRegex.test(part)) {
+            urlRegex.lastIndex = 0; // Reset regex state
+            // Clean up URL - remove trailing punctuation that might not be part of URL
+            const cleanUrl = part.replace(/[.,;!?]+$/, '');
+            const trailingPunct = part.slice(cleanUrl.length);
+            return `<a href="${escapeHtml(cleanUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cleanUrl)}</a>${escapeHtml(trailingPunct)}`;
+        }
+        return escapeHtml(part);
+    }).join('');
+}
+
 function addMessage(text, type, isLoading = false) {
     const messages = document.getElementById('messages');
     const messageDiv = document.createElement('div');
@@ -91,7 +115,11 @@ function addMessage(text, type, isLoading = false) {
     messageDiv.id = id;
     messageDiv.className = `message ${type}`;
     if (isLoading) messageDiv.classList.add('loading');
-    messageDiv.textContent = text;
+    
+    // Convert URLs to clickable links
+    const htmlContent = linkifyUrls(text);
+    messageDiv.innerHTML = htmlContent;
+    
     messages.appendChild(messageDiv);
     messages.scrollTop = messages.scrollHeight;
     return id;

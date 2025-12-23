@@ -108,12 +108,40 @@ h1 {
     border-bottom-left-radius: 4px;
 }
 
+.message.assistant a {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid #667eea;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.message.assistant a:hover {
+    color: #764ba2;
+    border-color: #764ba2;
+}
+
+.message.user a {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+.message.user a:hover {
+    opacity: 0.9;
+}
+
 .message.error {
     background: #fee;
     color: #c33;
     align-self: flex-start;
     border: 1px solid #fcc;
     border-bottom-left-radius: 4px;
+}
+
+.message.error a {
+    color: #c33;
+    text-decoration: underline;
 }
 
 .message.loading {
