@@ -3,14 +3,14 @@ import json
 from typing import Any, Dict, Optional, Union
 
 from fastmcp import Context
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 from ..server import mcp, api_client, init_api_client
 
 
 class CubeQuery(BaseModel):
     """Cube API query structure"""
-    cube_schema: str = Field(alias="schema")  # Field name for Cube API (aliased to avoid Pydantic V2 conflict)
+    schema: str  # Field name for Cube API
     dimensions: list[str]
     measures: list[str]
     filters: Optional[list[Dict[str, Any]]] = None
@@ -28,7 +28,9 @@ class CubeQuery(BaseModel):
                 raise ValueError(f"Invalid JSON: {e}")
         return cls(**obj)
     
-    model_config = ConfigDict(populate_by_name=True)  # Allow both 'schema' (alias) and 'cube_schema' (field name)
+    class Config:
+        # Allow 'schema' as a field name even though it's a Python keyword
+        populate_by_name = True
 
 
 class ChartMeta(BaseModel):
@@ -179,7 +181,7 @@ async def update_advanced_report(
             return error
         try:
             cube_query = CubeQuery(**query_dict)
-            data["query"] = cube_query.model_dump(by_alias=True)
+            data["query"] = cube_query.model_dump()
         except ValueError as e:
             return json.dumps({
                 "error": "Invalid query parameter",
@@ -270,7 +272,7 @@ async def create_advanced_report(
     try:
         # Validate using Pydantic model
         cube_query = CubeQuery(**query_dict)
-        query_dict = cube_query.model_dump(by_alias=True)
+        query_dict = cube_query.model_dump()
     except ValueError as e:
         return json.dumps({
             "error": "Invalid query parameter",
@@ -354,7 +356,7 @@ async def execute_cube_query(ctx: Context, query: Union[str, Dict[str, Any]]) ->
             query_dict = query
         # Validate using Pydantic model
         cube_query = CubeQuery(**query_dict)
-        parsed_query = cube_query.model_dump(by_alias=True)
+        parsed_query = cube_query.model_dump()
     except (json.JSONDecodeError, ValueError) as e:
         return json.dumps({
             "error": "Invalid query parameter",

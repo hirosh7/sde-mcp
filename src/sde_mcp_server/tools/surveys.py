@@ -204,39 +204,3 @@ async def commit_survey_draft(ctx: Context, project_id: int) -> str:
     result = api_client.commit_survey_draft(project_id)
     return json.dumps(result, indent=2)
 
-
-@mcp.tool()
-async def get_answer_details_from_ids(ctx: Context, answer_ids: List[str], project_id: Optional[int] = None) -> str:
-    """Get question and answer text for a list of answer IDs. Useful for understanding what survey answers mean when you have answer IDs (e.g., from profiles). Returns the question text and answer text for each answer ID.
-    
-    Example use cases:
-    - Get details for answer IDs from a profile
-    - Understand what specific answer IDs represent
-    - Map answer IDs to human-readable question/answer pairs
-    - Get section/subsection context for answers when project_id is provided
-    
-    Args:
-        answer_ids: List of answer IDs (e.g., ["A21", "A493", "A1252"])
-        project_id: Optional project ID. If provided, will include section_title and section_id 
-                   for each answer by looking up the answer in the project's survey structure.
-                   Since survey sections are consistent across projects, any project can be used
-                   to get section information. If not provided, section info will not be included.
-    
-    Returns:
-        JSON with answer details including:
-        - answers: List of answer details with:
-          - id: Answer ID
-          - text: Answer text
-          - question_id: Question ID
-          - question_text: Full question text
-          - section_title: Section title (if project_id provided and answer found in survey)
-          - section_id: Section ID (if project_id provided and answer found in survey)
-          - Additional fields: description, display_text, question_description, etc.
-        - not_found: List of answer IDs that weren't found in the library
-    """
-    global api_client
-    if api_client is None:
-        api_client = init_api_client()
-    result = api_client.get_answer_details_from_ids(answer_ids, project_id=project_id)
-    return json.dumps(result, indent=2)
-
