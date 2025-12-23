@@ -18,6 +18,7 @@
   "mcpName": "io.github.sdelements/sde-mcp",
   "scripts": {
     "start": "npm run build && node dist/index.js",
+    "start:http": "npm run build && node dist/httpServer.js",
     "prepare": "npm run build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
