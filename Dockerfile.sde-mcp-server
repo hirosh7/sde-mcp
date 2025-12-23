@@ -1,23 +1,25 @@
-FROM python:3.11-slim
+FROM node:20-slim
 
 WORKDIR /app
 
-# Install uv for faster dependency management (optional but recommended)
-RUN pip install --no-cache-dir uv
+# Copy package files
+COPY package.json package-lock.json ./
 
-# Copy dependency files and README (needed for package metadata)
-COPY pyproject.toml README.md LICENSE ./
-COPY uv.lock* ./
+# Copy TypeScript config files (needed for prepare script during npm ci)
+COPY tsconfig.json tsconfig.build.json ./
 
-# Copy source code
+# Copy source code (needed for build during npm ci)
 COPY src/ ./src/
 
-# Install dependencies using pip
-RUN pip install --no-cache-dir -e .
+# Install dependencies (this will trigger prepare -> build)
+RUN npm ci
+
+# Copy any additional needed files
+COPY README.md LICENSE ./
 
 # Expose port
 EXPOSE 8001
 
-# Run the MCP server
-CMD ["python", "-m", "sde_mcp_server"]
+# Run the MCP HTTP server
+CMD ["node", "dist/httpServer.js"]
 
