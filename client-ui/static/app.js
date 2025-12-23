@@ -96,9 +96,11 @@ function linkifyUrls(text) {
     const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
     const parts = text.split(urlRegex);
     
+    // Create a non-global regex for testing individual parts
+    const urlTest = /^https?:\/\/[^\s<>"']+$/;
+    
     return parts.map(part => {
-        if (urlRegex.test(part)) {
-            urlRegex.lastIndex = 0; // Reset regex state
+        if (urlTest.test(part)) {
             // Clean up URL - remove trailing punctuation that might not be part of URL
             const cleanUrl = part.replace(/[.,;!?]+$/, '');
             const trailingPunct = part.slice(cleanUrl.length);
