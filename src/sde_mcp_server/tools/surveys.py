@@ -239,4 +239,3 @@ async def get_answer_details_from_ids(ctx: Context, answer_ids: List[str], proje
         api_client = init_api_client()
     result = api_client.get_answer_details_from_ids(answer_ids, project_id=project_id)
     return json.dumps(result, indent=2)
-
