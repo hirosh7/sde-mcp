@@ -103,6 +103,7 @@ const EXPECTED_TOOL_NAMES = [
   "add_survey_question_comment",
   "commit_survey_draft",
   "find_survey_answers",
+  "get_answer_details_from_ids",
   "get_project_survey",
   "get_survey_answers_for_project",
   "remove_survey_answers_by_text",
@@ -159,6 +160,24 @@ function makeStubClient(): SDElementsClient {
     commitSurveyDraft: resolved({ ok: true }),
     addSurveyQuestionComment: resolved({ success: true }),
     getLibraryAnswersCache: returned([]),
+    getAnswerDetailsFromIds: resolved({
+      answers: [
+        {
+          id: "A1",
+          text: "Answer 1",
+          question_id: "Q1",
+          question_text: "Question 1",
+          question_description: "",
+          question_format: "",
+          question_mandatory: false,
+          description: "",
+          display_text: "",
+          section_title: null,
+          section_id: null,
+        },
+      ],
+      not_found: [],
+    }),
 
     // task status resolution
     listTaskStatuses: resolved({
@@ -274,6 +293,7 @@ const SMOKE_ARGS_BY_TOOL: Record<string, Record<string, unknown>> = {
   get_project_survey: { project_id: 1 },
   update_project_survey: { project_id: 1, answers: ["A1"] },
   find_survey_answers: { project_id: 1, search_texts: ["X"] },
+  get_answer_details_from_ids: { answer_ids: ["A1", "A2"] },
   set_project_survey_by_text: {
     project_id: 1,
     answer_texts: ["X"],

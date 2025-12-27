@@ -1101,6 +1101,245 @@ export class SDElementsClient {
     return queryDef;
   }
 
+  // --- Library Questions ---
+  // Reference: https://docs.sdelements.com/master/api/#library-questions
+
+  async getLibraryQuestion(
+    questionId: string,
+    params?: SDElementsQueryParams
+  ): Promise<Record<string, unknown>> {
+    return this.get<Record<string, unknown>>(
+      `library/questions/${questionId}/`,
+      params
+    );
+  }
+
+  // --- Answer Details from IDs ---
+
+  async getAnswerDetailsFromIds(
+    answerIds: string[],
+    projectId?: number
+  ): Promise<{
+    answers: Array<{
+      id: string;
+      text: string;
+      question_id: string | number | null;
+      question_text: string;
+      question_description: string;
+      question_format: string;
+      question_mandatory: boolean;
+      description: string;
+      display_text: string;
+      section_title: string | null;
+      section_id: string | null;
+    }>;
+    not_found: string[];
+  }> {
+    // Load library answers cache if not already loaded
+    if (!this.libraryAnswersCache) {
+      await this.loadLibraryAnswers();
+    }
+
+    // Create a lookup map for library answers by ID
+    const libraryAnswersMap = new Map<string, SDElementsSurveyAnswer>();
+    if (this.libraryAnswersCache) {
+      for (const answer of this.libraryAnswersCache) {
+        if (answer.id) {
+          libraryAnswersMap.set(answer.id, answer);
+        }
+      }
+    }
+
+    // Build section/subsection mapping if project_id is provided
+    const sectionMapping = new Map<
+      string,
+      { section_title: string; section_id: string }
+    >();
+    if (projectId !== undefined) {
+      try {
+        const survey = await this.getProjectSurvey(projectId);
+        const surveyData = survey as {
+          sections?: Array<{
+            title?: string;
+            id?: string;
+            questions?: Array<{
+              id?: string;
+              answers?: Array<{ id?: string }>;
+            }>;
+          }>;
+        };
+
+        // Iterate through sections -> questions -> answers to build mapping
+        for (const section of surveyData.sections || []) {
+          const sectionTitle = section.title || "Untitled Section";
+          const sectionId = section.id || "";
+          for (const question of section.questions || []) {
+            for (const answer of question.answers || []) {
+              const answerId = answer.id;
+              if (answerId) {
+                sectionMapping.set(answerId, {
+                  section_title: sectionTitle,
+                  section_id: sectionId,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // If we can't fetch survey structure, continue without section info
+        // This maintains backward compatibility
+      }
+    }
+
+    const results: {
+      answers: Array<{
+        id: string;
+        text: string;
+        question_id: string | number | null;
+        question_text: string;
+        question_description: string;
+        question_format: string;
+        question_mandatory: boolean;
+        description: string;
+        display_text: string;
+        section_title: string | null;
+        section_id: string | null;
+      }>;
+      not_found: string[];
+    } = {
+      answers: [],
+      not_found: [],
+    };
+
+    // Track unique question IDs to fetch question details
+    const questionIdsToFetch = new Set<string>();
+
+    // First pass: get answer details from cache
+    for (const answerId of answerIds) {
+      const answerData = libraryAnswersMap.get(answerId);
+      if (answerData) {
+        const questionId =
+          typeof answerData.question === "string"
+            ? answerData.question
+            : typeof answerData.question === "number"
+              ? String(answerData.question)
+              : null;
+
+        // Extract question text from display_text if available
+        const displayText = answerData.display_text || "";
+        let questionTextFromDisplay = "";
+        if (displayText.includes(" - ")) {
+          questionTextFromDisplay = displayText.split(" - ")[0];
+        }
+
+        const answerInfo: {
+          id: string;
+          text: string;
+          question_id: string | number | null;
+          question_text: string;
+          question_description: string;
+          question_format: string;
+          question_mandatory: boolean;
+          description: string;
+          display_text: string;
+          section_title: string | null;
+          section_id: string | null;
+        } = {
+          id: answerId,
+          text: answerData.text || "",
+          question_id: questionId,
+          question_text: questionTextFromDisplay,
+          question_description: "",
+          question_format: "",
+          question_mandatory: false,
+          description: (answerData.description as string) || "",
+          display_text: displayText,
+          section_title: null,
+          section_id: null,
+        };
+
+        if (questionId) {
+          questionIdsToFetch.add(questionId);
+        }
+
+        results.answers.push(answerInfo);
+      } else {
+        results.not_found.push(answerId);
+      }
+    }
+
+    // Second pass: fetch question details for unique question IDs
+    const questionDetailsMap = new Map<
+      string,
+      {
+        id: string;
+        text: string;
+        description: string;
+        format: string;
+        mandatory: boolean;
+      } | null
+    >();
+
+    for (const questionId of questionIdsToFetch) {
+      try {
+        const questionData = await this.getLibraryQuestion(questionId);
+        questionDetailsMap.set(questionId, {
+          id: (questionData.id as string) || questionId,
+          text: (questionData.text as string) || "",
+          description: (questionData.description as string) || "",
+          format: (questionData.format as string) || "",
+          mandatory: (questionData.mandatory as boolean) || false,
+        });
+      } catch {
+        // If we can't fetch question details, we'll use the display_text version
+        questionDetailsMap.set(questionId, null);
+      }
+    }
+
+    // Third pass: enrich answer details with full question information
+    for (const answerInfo of results.answers) {
+      const questionId =
+        answerInfo.question_id !== null ? String(answerInfo.question_id) : null;
+      if (questionId && questionDetailsMap.has(questionId)) {
+        const questionDetails = questionDetailsMap.get(questionId);
+        if (questionDetails) {
+          // Use the full question text from the questions endpoint
+          answerInfo.question_text =
+            questionDetails.text || answerInfo.question_text;
+          answerInfo.question_description = questionDetails.description;
+          answerInfo.question_format = questionDetails.format;
+          answerInfo.question_mandatory = questionDetails.mandatory;
+        } else {
+          // Question fetch failed, but ensure fields are always present with defaults
+          // question_text is already set from display_text in first pass
+          answerInfo.question_description = "";
+          answerInfo.question_format = "";
+          answerInfo.question_mandatory = false;
+        }
+      } else {
+        // No question_id or question not in map, but ensure fields are always present with defaults
+        // question_text is already set from display_text in first pass (or empty if not available)
+        answerInfo.question_description = "";
+        answerInfo.question_format = "";
+        answerInfo.question_mandatory = false;
+      }
+
+      // Fourth pass: enrich with section/subsection information if available
+      const answerId = answerInfo.id;
+      const sectionInfo = sectionMapping.get(answerId);
+      if (sectionInfo) {
+        answerInfo.section_title = sectionInfo.section_title;
+        answerInfo.section_id = sectionInfo.section_id;
+      } else {
+        // No section info available (either project_id not provided or answer not in survey)
+        answerInfo.section_title = null;
+        answerInfo.section_id = null;
+      }
+    }
+
+    return results;
+  }
+
   // --- Cache Accessors ---
 
   getLibraryAnswersCache() {

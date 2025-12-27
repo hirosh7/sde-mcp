@@ -5,8 +5,8 @@ A Model Context Protocol server that provides **SD Elements API integration**. T
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Node.js 20+](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 
 </div>
 
@@ -48,6 +48,7 @@ A Model Context Protocol server that provides **SD Elements API integration**. T
 * `set_project_survey_by_text` - Set survey using answer text directly instead of IDs
 * `add_survey_answers_by_text` - Add answers to survey without removing existing ones (e.g., add "Python")
 * `remove_survey_answers_by_text` - Remove specific answers from survey (e.g., remove "Java")
+* `get_answer_details_from_ids` - Get question and answer text for a list of answer IDs. Useful for understanding what survey answers mean when you have answer IDs (e.g., from profiles). Optionally includes section/subsection information if project_id is provided.
 
 ### Repository Scanning
 * `list_scan_connections` - List available repository scan connections (GitHub/GitLab)
@@ -73,44 +74,39 @@ A Model Context Protocol server that provides **SD Elements API integration**. T
 
 ## Quick Start
 
-### Using uvx (recommended)
-
-#### Option 1: From GitHub (Current)
-```bash
-uvx git+https://github.com/geoffwhittington/sde-mcp.git
-```
-
-#### Option 2: From PyPI (Future - when published)
-```bash
-uvx sde-mcp-server
-```
-
-### Using uv
+### Using npm (recommended)
 
 #### Install from GitHub
 ```bash
-uv pip install git+https://github.com/geoffwhittington/sde-mcp.git
+npm install -g git+https://github.com/geoffwhittington/sde-mcp.git
 sde-mcp-server
 ```
 
-#### Install from PyPI (when available)
+#### Install from npm (when published)
 ```bash
-uv pip install sde-mcp-server
+npm install -g sde-mcp-server
 sde-mcp-server
 ```
 
-### Using pip
+### Using Docker
 
-#### Install from GitHub
-```bash
-pip install git+https://github.com/geoffwhittington/sde-mcp.git
-sde-mcp-server
-```
+See [docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) for Docker deployment options.
 
-#### Install from PyPI (when available)
+### Local Development
+
 ```bash
-pip install sde-mcp-server
-sde-mcp-server
+# Clone the repository
+git clone <repository-url>
+cd sde-mcp
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Run the server
+npm start
 ```
 
 ## Configuration
@@ -148,13 +144,13 @@ SDE_API_KEY=your-api-key-here
 
 Add this to your Claude Desktop configuration file:
 
-#### Option 1: From GitHub (Current)
+#### Option 1: From npm (when published)
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "uvx",
-      "args": ["git+https://github.com/geoffwhittington/sde-mcp.git"],
+      "command": "npx",
+      "args": ["-y", "sde-mcp-server"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -164,13 +160,13 @@ Add this to your Claude Desktop configuration file:
 }
 ```
 
-#### Option 2: From PyPI (Future)
+#### Option 2: Local installation
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "uvx",
-      "args": ["sde-mcp-server"],
+      "command": "node",
+      "args": ["/path/to/sde-mcp/dist/index.js"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -184,13 +180,13 @@ Add this to your Claude Desktop configuration file:
 
 Add this to your Cline MCP settings:
 
-#### From GitHub (Current)
+#### From npm (when published)
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "uvx",
-      "args": ["git+https://github.com/geoffwhittington/sde-mcp.git"],
+      "command": "npx",
+      "args": ["-y", "sde-mcp-server"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -204,13 +200,13 @@ Add this to your Cline MCP settings:
 
 Add this to your Continue configuration:
 
-#### From GitHub (Current)
+#### From npm (when published)
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "uvx",
-      "args": ["git+https://github.com/geoffwhittington/sde-mcp.git"],
+      "command": "npx",
+      "args": ["-y", "sde-mcp-server"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -224,13 +220,13 @@ Add this to your Continue configuration:
 
 Add this to your Cursor configuration file:
 
-#### Option 1: From GitHub (Current)
+#### Option 1: From npm (when published)
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "uvx",
-      "args": ["git+https://github.com/geoffwhittington/sde-mcp.git"],
+      "command": "npx",
+      "args": ["-y", "sde-mcp-server"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -246,7 +242,8 @@ If you have the package installed locally:
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "sde-mcp-server",
+      "command": "node",
+      "args": ["/path/to/sde-mcp/dist/index.js"],
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -256,13 +253,13 @@ If you have the package installed locally:
 }
 ```
 
-#### Option 3: Using Python module directly
+#### Option 3: Using HTTP transport (Docker)
+For Docker deployments using HTTP transport:
 ```json
 {
   "mcpServers": {
     "sde-elements": {
-      "command": "python",
-      "args": ["-m", "sde_mcp_server"],
+      "url": "http://localhost:8001/mcp",
       "env": {
         "SDE_HOST": "https://your-sdelements-instance.com",
         "SDE_API_KEY": "your-api-key-here"
@@ -276,22 +273,26 @@ If you have the package installed locally:
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
-- Python 3.10 or higher
+- [Node.js](https://nodejs.org/) 20 or higher
+- [npm](https://www.npmjs.com/) (comes with Node.js)
+- [TypeScript](https://www.typescriptlang.org/) 5.0+
 
 ### Project Structure
 
-The project uses a `src/` layout:
+The project uses TypeScript with a `src/` layout:
 ```
 sde-mcp/
 ├── src/
-│   └── sde_mcp_server/    # Main package
-├── tests/                  # Test files
-├── pyproject.toml         # Project configuration
+│   ├── index.ts           # Main entry point (stdio)
+│   ├── httpServer.ts      # HTTP server entry point
+│   ├── server.ts          # MCP server implementation
+│   ├── tools/             # Tool implementations
+│   └── utils/             # Utilities (API client, etc.)
+├── tests/                 # Test files
+├── package.json           # Node.js package configuration
+├── tsconfig.json          # TypeScript configuration
 └── README.md
 ```
-
-Tests are configured to automatically add `src/` to the Python path (see `pyproject.toml`).
 
 ### Setup
 
@@ -300,59 +301,46 @@ Tests are configured to automatically add `src/` to the Python path (see `pyproj
 git clone <repository-url>
 cd sde-mcp
 
-# Create virtual environment and install dependencies
-uv sync
+# Install dependencies
+npm install
 
-# Run in development mode
-uv run python -m sde_mcp_server
+# Build the project
+npm run build
+
+# Run in development mode (stdio)
+npm start
+
+# Or run HTTP server
+npm run start:http
 ```
-
-### Testing Locally
 
 ### Testing
 
-**Setup (one-time):**
+**Run tests:**
 ```bash
-# Install project + test dependencies
-pip install -e ".[test-all]"
-# OR with uv:
-uv sync --all-extras
+# Run all tests
+npm test
 
-# Set up API key for integration tests (optional)
-cp env.example .env
-# Edit .env and add: OPENAI_API_KEY=your-key-here
-```
+# Run tests with coverage
+npm run test:coverage
 
-**Run tests (always from project root):**
-```bash
-# CSV-driven prompt-to-tool mapping tests (requires OpenAI API key)
-pytest tests/test_prompt_mapping_from_csv.py -m 'integration and not unit' -v
+# Run tests in watch mode
+npm run test:watch
 ```
 
 **Test with MCP Inspector:**
 ```bash
-npx @modelcontextprotocol/inspector python -m sde_mcp_server
+npx @modelcontextprotocol/inspector node dist/index.js
 ```
-
-**Important:** 
-- Always run tests from the project root directory (not from `tests/`)
-- The project must be installed first (`pip install -e .` or `uv sync`)
-- Test dependencies are isolated - they don't pollute the server installation
-- The `src/` layout is automatically handled by pytest's `pythonpath` configuration
-
-See `tests/README.md` for full testing guide.
 
 ### Building
 
 ```bash
-# Build the package
-uv build
+# Build the project
+npm run build
 
-# Install locally for testing
-uv pip install dist/*.whl
-
-# Test the installed package
-sde-mcp-server
+# Clean build artifacts
+npm run clean
 ```
 
 ## Key Features & Use Cases
@@ -545,8 +533,9 @@ Use the Advanced Reports and Cube API to generate custom analytics and insights 
 - **Authentication**: Secure API key-based authentication
 - **Error Handling**: Comprehensive error handling and validation
 - **Environment Configuration**: Flexible configuration via environment variables
-- **Modern Python**: Built with modern Python packaging (uv, pyproject.toml)
+- **Modern TypeScript**: Built with TypeScript and Node.js
 - **MCP Compliant**: Fully compatible with the Model Context Protocol
+- **Docker Support**: Can run as a microservice with HTTP transport
 
 ## Complete Example Workflows
 

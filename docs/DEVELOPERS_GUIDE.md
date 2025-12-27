@@ -52,7 +52,8 @@ docker-compose up --build
 cd sde-mcp
 export SDE_HOST=https://your-instance.sdelements.com
 export SDE_API_KEY=your-key
-python -m sde_mcp_server
+npm run build
+npm start
 
 # Terminal 2: Start MCP Proxy
 cd mcp-proxy-service
@@ -163,10 +164,10 @@ sequenceDiagram
    - Formats responses using local templates
    - Technology: FastAPI, Anthropic SDK, MCP Client
 
-4. **SDE MCP Server** (`src/sde_mcp_server/`)
+4. **SDE MCP Server** (`src/`)
    - Exposes SD Elements API as MCP tools
    - Handles authentication and API calls
-   - Technology: FastMCP
+   - Technology: TypeScript, Node.js, MCP SDK
 
 ## Workflow
 

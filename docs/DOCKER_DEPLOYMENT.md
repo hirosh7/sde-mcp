@@ -166,7 +166,7 @@ Elicitation requires:
 
 ## Migration from Python
 
-The Python version is still available in the `src/sde_mcp_server/` directory but is no longer used in Docker. The TypeScript version provides:
+The Python version has been completely removed. The TypeScript version provides:
 
 ✅ Better type safety
 ✅ Faster execution

@@ -476,4 +476,33 @@ export function registerSurveyTools(
       return jsonToolResult(result);
     }
   );
+
+  // Get answer details from IDs
+  server.registerTool(
+    "get_answer_details_from_ids",
+    {
+      title: "Get Answer Details From IDs",
+      description:
+        "Get question and answer text for a list of answer IDs. Useful for understanding what survey answers mean when you have answer IDs (e.g., from profiles). Returns the question text and answer text for each answer ID.\n\nExample use cases:\n- Get details for answer IDs from a profile\n- Understand what specific answer IDs represent\n- Map answer IDs to human-readable question/answer pairs\n- Get section/subsection context for answers when project_id is provided",
+      inputSchema: z.object({
+        answer_ids: z
+          .array(z.string())
+          .describe("List of answer IDs (e.g., [\"A21\", \"A493\", \"A1252\"])"),
+        project_id: z
+          .number()
+          .optional()
+          .describe(
+            "Optional project ID. If provided, will include section_title and section_id for each answer by looking up the answer in the project's survey structure. Since survey sections are consistent across projects, any project can be used to get section information. If not provided, section info will not be included."
+          ),
+      }),
+    },
+    async ({ answer_ids, project_id }) => {
+      const result = await client.getAnswerDetailsFromIds(
+        answer_ids,
+        project_id
+      );
+
+      return jsonToolResult(result);
+    }
+  );
 }

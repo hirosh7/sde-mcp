@@ -325,7 +325,8 @@ docker-compose up -d
 cd sde-mcp
 export SDE_HOST=https://your-instance.sdelements.com
 export SDE_API_KEY=your-key
-python -m sde_mcp_server
+npm run build
+npm start
 
 # Terminal 2: Start MCP Proxy
 cd mcp-proxy-service

@@ -131,12 +131,12 @@ Core service that orchestrates Claude and MCP tool calls.
 - `mcp_client.py`: Connects to MCP server
 - `response_formatter.py`: Formats JSON responses to natural language
 
-### SDE MCP Server (`src/sde_mcp_server/`)
+### SDE MCP Server (`src/`)
 
-Existing MCP server that provides SD Elements tools.
+MCP server that provides SD Elements tools.
 
-- **Port:** 8001
-- **Technology:** FastMCP
+- **Port:** 8001 (HTTP) or stdio
+- **Technology:** TypeScript, Node.js, MCP SDK
 - **Purpose:** Expose SD Elements API as MCP tools
 
 ## Performance
