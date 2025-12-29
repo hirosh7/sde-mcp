@@ -133,6 +133,85 @@ export function registerProjectTools(
     }
   );
 
+  // Get profile
+  server.registerTool(
+    "get_profile",
+    {
+      title: "Get Profile",
+      description:
+        "Get details of a specific profile including its associated answer IDs converted to question and answer text. Returns profile information along with human-readable question/answer pairs for all answers associated with the profile.",
+      inputSchema: z.object({
+        profile_id: z.string().describe("ID of the profile (e.g., 'P2', 'mobile', 'web')"),
+        project_id: z
+          .number()
+          .optional()
+          .describe(
+            "Optional project ID. If provided, will include section_title and section_id for each answer by looking up the answer in the project's survey structure."
+          ),
+        include_answer_details: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe(
+            "Whether to include question and answer text details for profile answers. If false, only returns answer IDs."
+          ),
+      }),
+    },
+    async ({ profile_id, project_id, include_answer_details = true }) => {
+      const profile = await client.getProfile(profile_id);
+
+      const result: Record<string, unknown> = {
+        id: profile.id,
+        name: profile.name,
+        description: profile.description,
+        default: profile.default,
+      };
+
+      // Extract answer IDs from profile
+      // Profile API may return answers in different formats
+      const profileData = profile as Record<string, unknown>;
+      let answerIds: string[] = [];
+
+      // Check various possible fields where answer IDs might be stored
+      if (Array.isArray(profileData.answers)) {
+        answerIds = profileData.answers as string[];
+      } else if (Array.isArray(profileData.answer_ids)) {
+        answerIds = profileData.answer_ids as string[];
+      } else if (typeof profileData.answers === "string") {
+        // If answers is a comma-separated string
+        answerIds = (profileData.answers as string).split(",").map((id) => id.trim());
+      }
+
+      result.answer_ids = answerIds;
+
+      // Convert answer IDs to question/answer text if requested
+      if (include_answer_details && answerIds.length > 0) {
+        try {
+          const answerDetails = await client.getAnswerDetailsFromIds(
+            answerIds,
+            project_id
+          );
+
+          result.answer_details = answerDetails.answers.map((answer) => ({
+            answer_id: answer.id,
+            question_text: answer.question_text,
+            answer_text: answer.text,
+            section_title: answer.section_title,
+            section_id: answer.section_id,
+            formatted: `${answer.id}: ${answer.question_text} - ${answer.text}`,
+          }));
+
+          result.not_found_answers = answerDetails.not_found;
+        } catch (error) {
+          result.answer_details_error =
+            error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      return jsonToolResult(result);
+    }
+  );
+
   // List risk policies
   server.registerTool(
     "list_risk_policies",

@@ -1235,6 +1235,9 @@ export class SDElementsClient {
           questionTextFromDisplay = parts[0] || "";
           // Join remaining parts in case answer text contains " - "
           answerTextFromDisplay = parts.slice(1).join(" - ") || "";
+        } else if (displayText) {
+          // If display_text exists but doesn't contain " - ", use it as question text
+          questionTextFromDisplay = displayText;
         }
 
         // Use extracted answer text from display_text, fallback to answerData.text

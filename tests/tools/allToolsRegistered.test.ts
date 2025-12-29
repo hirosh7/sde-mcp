@@ -77,6 +77,7 @@ const EXPECTED_TOOL_NAMES = [
   "create_project",
   "create_project_from_code",
   "delete_project",
+  "get_profile",
   "get_project",
   "get_risk_policy",
   "list_profiles",
@@ -145,6 +146,11 @@ function makeStubClient(): SDElementsClient {
     // projects (create_project auto-selects default profile if not provided)
     listProfiles: resolved({
       results: [{ id: "P", name: "Default", default: true }],
+    }),
+    getProfile: resolved({
+      id: "P2",
+      name: "Test Profile",
+      answers: ["A1", "A2"],
     }),
 
     // surveys
@@ -249,6 +255,7 @@ const SMOKE_ARGS_BY_TOOL: Record<string, Record<string, unknown>> = {
   list_projects: {},
   get_project: { project_id: 1 },
   list_profiles: {},
+  get_profile: { profile_id: "P2" },
   list_risk_policies: {},
   get_risk_policy: { risk_policy_id: 1 },
   create_project: { application_id: 1, name: "Proj", description: "d" },
