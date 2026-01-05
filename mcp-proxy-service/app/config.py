@@ -11,9 +11,13 @@ class Config:
     
     # Anthropic API
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-haiku-20241022")
+    # Default to Sonnet 4.5 for both formatting and tool selection (better context understanding)
+    # Claude 4.5 Sonnet format: claude-sonnet-4-5-YYYYMMDD (note: different from 3.5 format)
+    _claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+    CLAUDE_MODEL = _claude_model
     # Tool selection model (can be different from formatting model for cost optimization)
-    CLAUDE_TOOL_SELECTION_MODEL = os.getenv("CLAUDE_TOOL_SELECTION_MODEL", "claude-3-5-haiku-20241022")
+    # Defaults to same as CLAUDE_MODEL if not specified
+    CLAUDE_TOOL_SELECTION_MODEL = os.getenv("CLAUDE_TOOL_SELECTION_MODEL", _claude_model)
     
     # Performance
     ENABLE_TIMING = os.getenv("ENABLE_TIMING", "false").lower() in ("true", "1", "yes")
@@ -21,6 +25,11 @@ class Config:
     # Server
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8002"))
+    
+    # Redis Configuration
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+    SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
+    SESSION_MAX_CONVERSATIONS = int(os.getenv("SESSION_MAX_CONVERSATIONS", "50"))
     
     @classmethod
     def validate(cls):

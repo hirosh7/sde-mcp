@@ -1,5 +1,20 @@
 const SEAGLASS_URL = 'http://localhost:8003';
 
+// Session management - generate and persist session_id for conversation context
+function getOrCreateSessionId() {
+    let sessionId = localStorage.getItem('sde-mcp-session-id');
+    if (!sessionId) {
+        // Generate a new session ID (UUID v4 format)
+        sessionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+        localStorage.setItem('sde-mcp-session-id', sessionId);
+    }
+    return sessionId;
+}
+
 // Load SDE instance info on page load
 async function loadInstanceInfo() {
     try {
@@ -61,14 +76,20 @@ async function sendQuery() {
 
     try {
         const startTime = Date.now();
+        const sessionId = getOrCreateSessionId();
         const response = await fetch(`${SEAGLASS_URL}/api/v1/nlquery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
+            body: JSON.stringify({ query, session_id: sessionId })
         });
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
         
         const data = await response.json();
+        
+        // Update session_id if returned (in case server generated a new one)
+        if (data.session_id && data.session_id !== sessionId) {
+            localStorage.setItem('sde-mcp-session-id', data.session_id);
+        }
         
         // Remove loading message
         document.getElementById(loadingId).remove();

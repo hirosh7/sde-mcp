@@ -24,11 +24,13 @@ MCP_PROXY_URL = os.getenv("MCP_PROXY_URL", "http://localhost:8002")
 
 class NLQueryRequest(BaseModel):
     query: str
+    session_id: str | None = None
 
 
 class NLQueryResponse(BaseModel):
     response: str
     success: bool
+    session_id: str | None = None
     error: str | None = None
 
 
@@ -56,18 +58,24 @@ async def get_sde_instance():
 
 @app.post("/api/v1/nlquery", response_model=NLQueryResponse)
 async def natural_language_query(request: NLQueryRequest):
-    """Forward natural language query to MCP Proxy"""
+    """Forward natural language query to MCP Proxy with session context"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
+            # Forward session_id if provided
+            payload = {"query": request.query}
+            if request.session_id:
+                payload["session_id"] = request.session_id
+            
             response = await client.post(
                 f"{MCP_PROXY_URL}/api/v1/query",
-                json={"query": request.query}
+                json=payload
             )
             response.raise_for_status()
             data = response.json()
             return NLQueryResponse(
                 response=data.get("response", ""),
                 success=data.get("success", False),
+                session_id=data.get("session_id"),
                 error=data.get("error")
             )
     except httpx.HTTPStatusError as e:
