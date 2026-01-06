@@ -19,6 +19,7 @@ services:
       - "8003:8003"
     environment:
       - MCP_PROXY_URL=http://mcp-proxy:8002
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       - mcp-proxy
     networks:

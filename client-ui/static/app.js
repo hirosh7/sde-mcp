@@ -82,23 +82,35 @@ async function sendQuery() {
         const sessionId = getOrCreateSessionId();
         console.log(`[Session] Sending query with session_id: ${sessionId}`);
         
+        // Always include session_id, even if it might be null/undefined (defensive)
+        const payload = { query };
+        if (sessionId) {
+            payload.session_id = sessionId;
+        }
+        console.log(`[Session] Payload being sent:`, JSON.stringify(payload));
+        
         const response = await fetch(`${SEAGLASS_URL}/api/v1/nlquery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, session_id: sessionId })
+            body: JSON.stringify(payload)
         });
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
         
         const data = await response.json();
         
         // Update session_id if returned (in case server generated a new one)
-        if (data.session_id && data.session_id !== sessionId) {
-            console.warn(`[Session] Session ID changed! Old: ${sessionId}, New: ${data.session_id}`);
-            localStorage.setItem('sde-mcp-session-id', data.session_id);
-        } else if (data.session_id === sessionId) {
-            console.log(`[Session] Session ID confirmed: ${sessionId}`);
+        // IMPORTANT: Only update if server returned a different session_id
+        // If server didn't return session_id, keep using the one we sent
+        if (data.session_id) {
+            if (data.session_id !== sessionId) {
+                console.warn(`[Session] Session ID changed! Old: ${sessionId}, New: ${data.session_id}`);
+                localStorage.setItem('sde-mcp-session-id', data.session_id);
+            } else {
+                console.log(`[Session] Session ID confirmed: ${sessionId}`);
+            }
         } else {
-            console.warn(`[Session] No session_id in response!`);
+            console.warn(`[Session] No session_id in response! Keeping current: ${sessionId}`);
+            // Don't clear localStorage - keep using the session_id we sent
         }
         
         // Remove loading message
@@ -111,7 +123,9 @@ async function sendQuery() {
         }
     } catch (error) {
         document.getElementById(loadingId).remove();
+        console.error(`[Session] Request failed, but preserving session_id: ${sessionId}`);
         addMessage(`Network error: ${error.message}`, 'error');
+        // Don't clear session_id on error - preserve it for retry
     }
 }
 

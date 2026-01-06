@@ -189,18 +189,25 @@ async def process_query(request: QueryRequest):
     
     # Generate or use provided session_id
     # Handle empty strings as None (Pydantic might send empty string instead of None)
+    logger.debug(f"[MCP-Proxy] Received request with session_id: {request.session_id!r} (type: {type(request.session_id).__name__})")
+    
     provided_session_id = None
     if request.session_id:
         stripped = request.session_id.strip()
         if stripped:  # Only use non-empty strings
             provided_session_id = stripped
+            logger.debug(f"[MCP-Proxy] Stripped session_id: {provided_session_id!r}")
+        else:
+            logger.warning(f"[MCP-Proxy] session_id was empty string after stripping")
+    else:
+        logger.debug(f"[MCP-Proxy] request.session_id is None or falsy")
     
     if provided_session_id:
         session_id = provided_session_id
-        logger.info(f"Using provided session_id: {session_id}")
+        logger.info(f"[MCP-Proxy] Using provided session_id: {session_id}")
     else:
         session_id = str(uuid.uuid4())
-        logger.info(f"Generated new session_id: {session_id} (request.session_id was: {request.session_id!r})")
+        logger.warning(f"[MCP-Proxy] Generated new session_id: {session_id} (request.session_id was: {request.session_id!r})")
     
     try:
         # Retrieve conversation history from Redis
