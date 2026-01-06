@@ -1,5 +1,6 @@
 """Main FastAPI application for MCP Proxy Service"""
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,10 +11,12 @@ from app.mcp_client import MCPHTTPClient
 from app.claude_adapter import ClaudeToolSelector
 from app.claude_formatter import ClaudeResponseFormatter
 from app.response_formatter import FallbackResponseFormatter
+from app.redis_session import RedisSessionStorage
 
 # Configure logging
+log_level = getattr(logging, Config.LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -23,18 +26,28 @@ mcp_client: MCPHTTPClient | None = None
 claude_selector: ClaudeToolSelector | None = None
 claude_formatter: ClaudeResponseFormatter | None = None
 fallback_formatter: FallbackResponseFormatter | None = None
+redis_storage: RedisSessionStorage | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown"""
-    global mcp_client, claude_selector, claude_formatter, fallback_formatter
+    global mcp_client, claude_selector, claude_formatter, fallback_formatter, redis_storage
     
     # Startup
     logger.info("Starting MCP Proxy Service...")
     Config.validate()
     
     try:
+        # Initialize Redis storage
+        redis_storage = RedisSessionStorage(
+            redis_url=Config.REDIS_URL,
+            ttl_hours=Config.SESSION_TTL_HOURS,
+            max_conversations=Config.SESSION_MAX_CONVERSATIONS
+        )
+        await redis_storage.connect()
+        logger.info(f"Connected to Redis at {Config.REDIS_URL}")
+        
         # Initialize MCP client
         mcp_client = MCPHTTPClient(Config.MCP_SERVER_URL)
         await mcp_client.connect()
@@ -69,6 +82,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down MCP Proxy Service...")
+    if redis_storage:
+        await redis_storage.close()
     if mcp_client:
         await mcp_client.close()
     logger.info("MCP Proxy Service stopped")
@@ -160,17 +175,48 @@ async def get_sde_instance():
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     """
-    Process a natural language query.
+    Process a natural language query with session context.
     
     This endpoint:
-    1. Uses Claude to select the appropriate tool
-    2. Calls the tool via MCP
-    3. Formats the result into natural language
+    1. Retrieves conversation history from Redis (if session_id provided)
+    2. Uses Claude to select the appropriate tool with context
+    3. Calls the tool via MCP
+    4. Formats the result into natural language with context
+    5. Stores the conversation in Redis
     """
-    if not mcp_client or not claude_selector or not claude_formatter or not fallback_formatter:
+    if not all([mcp_client, claude_selector, claude_formatter, fallback_formatter, redis_storage]):
         raise HTTPException(status_code=503, detail="Service not fully initialized")
     
+    # Generate or use provided session_id
+    # Handle empty strings as None (Pydantic might send empty string instead of None)
+    logger.debug(f"[MCP-Proxy] Received request with session_id: {request.session_id!r} (type: {type(request.session_id).__name__})")
+    
+    provided_session_id = None
+    if request.session_id:
+        stripped = request.session_id.strip()
+        if stripped:  # Only use non-empty strings
+            provided_session_id = stripped
+            logger.debug(f"[MCP-Proxy] Stripped session_id: {provided_session_id!r}")
+        else:
+            logger.warning(f"[MCP-Proxy] session_id was empty string after stripping")
+    else:
+        logger.debug(f"[MCP-Proxy] request.session_id is None or falsy")
+    
+    if provided_session_id:
+        session_id = provided_session_id
+        logger.info(f"[MCP-Proxy] Using provided session_id: {session_id}")
+    else:
+        session_id = str(uuid.uuid4())
+        logger.warning(f"[MCP-Proxy] Generated new session_id: {session_id} (request.session_id was: {request.session_id!r})")
+    
     try:
+        # Retrieve conversation history from Redis
+        conversation_history = await redis_storage.get_conversation_history(session_id)
+        if conversation_history:
+            logger.info(f"Session {session_id}: Retrieved {len(conversation_history)} previous conversation(s) from history")
+        else:
+            logger.debug(f"Session {session_id}: No previous conversations found (new session)")
+        
         # Get available tools
         tools = await mcp_client.get_tools()
         
@@ -178,18 +224,24 @@ async def process_query(request: QueryRequest):
             return QueryResponse(
                 response="No tools available from MCP server",
                 success=False,
-                error="No tools available"
+                error="No tools available",
+                session_id=session_id
             )
         
-        # Use Claude to select tool
+        # Use Claude to select tool with conversation history
         try:
-            tool_name, arguments = await claude_selector.select_tool(request.query, tools)
+            tool_name, arguments = await claude_selector.select_tool(
+                request.query, 
+                tools,
+                conversation_history=conversation_history
+            )
         except ValueError as e:
             return QueryResponse(
                 response=str(e),
                 success=False,
                 error=str(e),
-                tool_name=None
+                tool_name=None,
+                session_id=session_id
             )
         
         # Call the tool
@@ -201,24 +253,39 @@ async def process_query(request: QueryRequest):
                 response=f"Failed to execute tool '{tool_name}': {str(e)}",
                 success=False,
                 error=str(e),
-                tool_name=tool_name
+                tool_name=tool_name,
+                session_id=session_id
             )
         
-        # Format the result using Claude, with fallback to manual formatter
+        # Format the result using Claude with conversation history, with fallback to manual formatter
         try:
             formatted_response = await claude_formatter.format_result(
                 tool_name=tool_name,
                 result=result,
-                original_query=request.query
+                original_query=request.query,
+                conversation_history=conversation_history
             )
         except Exception as e:
             logger.warning(f"Claude formatting failed, using fallback: {e}")
             # Fallback to manual formatter
             formatted_response = fallback_formatter.format_tool_result(tool_name, result)
         
+        # Store conversation in Redis
+        await redis_storage.append_conversation(
+            session_id=session_id,
+            query=request.query,
+            response=formatted_response,
+            metadata={
+                "tool_name": tool_name,
+                "success": True
+            }
+        )
+        logger.debug(f"Session {session_id}: Stored conversation in Redis (total conversations: {len(conversation_history) + 1})")
+        
         return QueryResponse(
             response=formatted_response,
             success=True,
+            session_id=session_id,
             tool_name=tool_name
         )
         
@@ -227,7 +294,8 @@ async def process_query(request: QueryRequest):
         return QueryResponse(
             response=f"An error occurred: {str(e)}",
             success=False,
-            error=str(e)
+            error=str(e),
+            session_id=session_id
         )
 
 
