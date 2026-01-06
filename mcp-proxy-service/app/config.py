@@ -22,6 +22,9 @@ class Config:
     # Performance
     ENABLE_TIMING = os.getenv("ENABLE_TIMING", "false").lower() in ("true", "1", "yes")
     
+    # Logging
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+    
     # Server
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8002"))

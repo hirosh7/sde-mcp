@@ -11,6 +11,9 @@ function getOrCreateSessionId() {
             return v.toString(16);
         });
         localStorage.setItem('sde-mcp-session-id', sessionId);
+        console.log(`[Session] Generated new session_id: ${sessionId}`);
+    } else {
+        console.log(`[Session] Using existing session_id: ${sessionId}`);
     }
     return sessionId;
 }
@@ -77,6 +80,8 @@ async function sendQuery() {
     try {
         const startTime = Date.now();
         const sessionId = getOrCreateSessionId();
+        console.log(`[Session] Sending query with session_id: ${sessionId}`);
+        
         const response = await fetch(`${SEAGLASS_URL}/api/v1/nlquery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -88,7 +93,12 @@ async function sendQuery() {
         
         // Update session_id if returned (in case server generated a new one)
         if (data.session_id && data.session_id !== sessionId) {
+            console.warn(`[Session] Session ID changed! Old: ${sessionId}, New: ${data.session_id}`);
             localStorage.setItem('sde-mcp-session-id', data.session_id);
+        } else if (data.session_id === sessionId) {
+            console.log(`[Session] Session ID confirmed: ${sessionId}`);
+        } else {
+            console.warn(`[Session] No session_id in response!`);
         }
         
         // Remove loading message

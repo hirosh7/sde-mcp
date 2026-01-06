@@ -14,8 +14,9 @@ from app.response_formatter import FallbackResponseFormatter
 from app.redis_session import RedisSessionStorage
 
 # Configure logging
+log_level = getattr(logging, Config.LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -187,7 +188,19 @@ async def process_query(request: QueryRequest):
         raise HTTPException(status_code=503, detail="Service not fully initialized")
     
     # Generate or use provided session_id
-    session_id = request.session_id or str(uuid.uuid4())
+    # Handle empty strings as None (Pydantic might send empty string instead of None)
+    provided_session_id = None
+    if request.session_id:
+        stripped = request.session_id.strip()
+        if stripped:  # Only use non-empty strings
+            provided_session_id = stripped
+    
+    if provided_session_id:
+        session_id = provided_session_id
+        logger.info(f"Using provided session_id: {session_id}")
+    else:
+        session_id = str(uuid.uuid4())
+        logger.info(f"Generated new session_id: {session_id} (request.session_id was: {request.session_id!r})")
     
     try:
         # Retrieve conversation history from Redis
