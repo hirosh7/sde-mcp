@@ -77,9 +77,11 @@ async function sendQuery() {
     // Show loading
     const loadingId = addMessage('Processing...', 'assistant', true);
 
+    // Get session ID before try block so it's available in catch block
+    const sessionId = getOrCreateSessionId();
+
     try {
         const startTime = Date.now();
-        const sessionId = getOrCreateSessionId();
         console.log(`[Session] Sending query with session_id: ${sessionId}`);
         
         // Always include session_id, even if it might be null/undefined (defensive)
