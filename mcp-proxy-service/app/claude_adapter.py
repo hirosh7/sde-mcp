@@ -70,6 +70,22 @@ Given a user's natural language query, determine which tool should be called and
 
 CRITICAL TOOL SELECTION RULES:
 
+0. DATA TRANSFORMATION REQUESTS (NEW - IMPORTANT):
+   - If the user wants to transform, summarize, filter, or reformat data that was already retrieved in a previous response, this is a DATA TRANSFORMATION request
+   - Examples of data transformation requests:
+     * "summarize that data by showing only task ID and Title"
+     * "show me just the names from that list"
+     * "filter to show only active projects"
+     * "reformat that JSON to show only the IDs"
+   - For data transformation requests, return:
+     {
+       "tool_name": null,
+       "arguments": {},
+       "error": "No tool needed - this is a data transformation request on already retrieved data"
+     }
+   - DO NOT call a tool if the user is asking to transform data from a previous response
+   - Only call tools when the user needs to FETCH NEW DATA from SD Elements API
+
 1. CONTEXT AWARENESS (CRITICAL):
    - ALWAYS check conversation history for references like "that project", "the first one", "it", "them", etc.
    - When a user asks about "that project" or "the project", look in the previous assistant response for:
@@ -177,6 +193,12 @@ CRITICAL TOOL SELECTION RULES:
             
             tool_name = result.get("tool_name")
             arguments = result.get("arguments", {})
+            error = result.get("error", "")
+            
+            # Check if this is a data transformation request (no tool needed)
+            if not tool_name and error and "data transformation" in error.lower():
+                # Return special indicator for data transformation
+                return None, {"is_data_transformation": True, "error_message": error}
             
             if not tool_name:
                 error = result.get("error", "No tool selected")

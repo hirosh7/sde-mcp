@@ -21,6 +21,8 @@ class Config:
     
     # Performance
     ENABLE_TIMING = os.getenv("ENABLE_TIMING", "false").lower() in ("true", "1", "yes")
+    # Claude formatting timeout (in seconds) - increased for longer responses
+    CLAUDE_FORMATTER_TIMEOUT = float(os.getenv("CLAUDE_FORMATTER_TIMEOUT", "60.0"))
     
     # Logging
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

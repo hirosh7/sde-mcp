@@ -1,5 +1,6 @@
 """Main FastAPI application for MCP Proxy Service"""
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -61,12 +62,13 @@ async def lifespan(app: FastAPI):
         )
         logger.info(f"Initialized Claude adapter with model {Config.CLAUDE_MODEL} (tool selection: {Config.CLAUDE_TOOL_SELECTION_MODEL})")
         
-        # Initialize Claude formatter
+        # Initialize Claude formatter with configurable timeout
         claude_formatter = ClaudeResponseFormatter(
             api_key=Config.ANTHROPIC_API_KEY,
-            model=Config.CLAUDE_MODEL
+            model=Config.CLAUDE_MODEL,
+            timeout=Config.CLAUDE_FORMATTER_TIMEOUT
         )
-        logger.info("Initialized Claude response formatter")
+        logger.info(f"Initialized Claude response formatter (timeout: {Config.CLAUDE_FORMATTER_TIMEOUT}s)")
         
         # Initialize fallback formatter
         fallback_formatter = FallbackResponseFormatter()
@@ -244,31 +246,57 @@ async def process_query(request: QueryRequest):
                 session_id=session_id
             )
         
-        # Call the tool
-        try:
-            result = await mcp_client.call_tool(tool_name, arguments)
-        except Exception as e:
-            logger.error(f"Tool call failed: {e}")
-            return QueryResponse(
-                response=f"Failed to execute tool '{tool_name}': {str(e)}",
-                success=False,
-                error=str(e),
-                tool_name=tool_name,
-                session_id=session_id
-            )
-        
-        # Format the result using Claude with conversation history, with fallback to manual formatter
-        try:
-            formatted_response = await claude_formatter.format_result(
-                tool_name=tool_name,
-                result=result,
-                original_query=request.query,
-                conversation_history=conversation_history
-            )
-        except Exception as e:
-            logger.warning(f"Claude formatting failed, using fallback: {e}")
-            # Fallback to manual formatter
-            formatted_response = fallback_formatter.format_tool_result(tool_name, result)
+        # Check if this is a data transformation request (no tool needed)
+        if tool_name is None and arguments.get("is_data_transformation"):
+            logger.info(f"Session {session_id}: Handling data transformation request (no tool call needed)")
+            # Use Claude to transform data from conversation history
+            try:
+                formatted_response = await claude_formatter.transform_data(
+                    query=request.query,
+                    conversation_history=conversation_history
+                )
+            except Exception as e:
+                logger.error(f"Data transformation failed: {e}")
+                return QueryResponse(
+                    response=f"Failed to transform data: {str(e)}",
+                    success=False,
+                    error=str(e),
+                    tool_name=None,
+                    session_id=session_id
+                )
+        else:
+            # Normal flow: call tool and format result
+            # Call the tool
+            try:
+                result = await mcp_client.call_tool(tool_name, arguments)
+            except Exception as e:
+                logger.error(f"Tool call failed: {e}")
+                return QueryResponse(
+                    response=f"Failed to execute tool '{tool_name}': {str(e)}",
+                    success=False,
+                    error=str(e),
+                    tool_name=tool_name,
+                    session_id=session_id
+                )
+            
+            # Format the result using Claude with conversation history, with fallback to manual formatter
+            format_start_time = time.time()
+            try:
+                formatted_response = await claude_formatter.format_result(
+                    tool_name=tool_name,
+                    result=result,
+                    original_query=request.query,
+                    conversation_history=conversation_history
+                )
+                format_duration = time.time() - format_start_time
+                logger.info(f"Claude formatting completed in {format_duration:.2f}s for tool '{tool_name}'")
+            except Exception as e:
+                format_duration = time.time() - format_start_time
+                logger.warning(f"Claude formatting failed after {format_duration:.2f}s, using fallback: {e}")
+                logger.debug(f"Claude formatting error details: {type(e).__name__}: {str(e)}")
+                # Fallback to manual formatter with original query for context-aware formatting
+                formatted_response = fallback_formatter.format_tool_result(tool_name, result, original_query=request.query)
+                logger.info(f"Fallback formatter completed for tool '{tool_name}'")
         
         # Store conversation in Redis
         await redis_storage.append_conversation(

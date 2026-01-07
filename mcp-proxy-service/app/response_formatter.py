@@ -6,13 +6,14 @@ from typing import Any, Dict
 class FallbackResponseFormatter:
     """Formats tool results into natural language responses"""
     
-    def format_tool_result(self, tool_name: str, result: Dict[str, Any]) -> str:
+    def format_tool_result(self, tool_name: str, result: Dict[str, Any], original_query: str = None) -> str:
         """
         Format a tool result into natural language.
         
         Args:
             tool_name: Name of the tool that was called
             result: The result dictionary from the tool
+            original_query: Optional original user query for context-aware formatting
             
         Returns:
             Formatted natural language string
@@ -29,9 +30,14 @@ class FallbackResponseFormatter:
             "create_profile": self._format_profile_creation,
             "list_profiles": self._format_profile_list,
             "get_profile": self._format_profile_details,
+            "list_countermeasures": self._format_countermeasures_list,
+            "get_countermeasure": self._format_countermeasure_details,
         }
         
         formatter = formatters.get(tool_name, self._format_generic)
+        # Pass original_query to formatters that support it
+        if tool_name == "list_countermeasures":
+            return formatter(result, original_query)
         return formatter(result)
     
     def _format_project_creation(self, result: Dict[str, Any]) -> str:
@@ -309,4 +315,73 @@ class FallbackResponseFormatter:
                 formatted_parts.append(f"{key}: {value}")
         
         return "\n".join(formatted_parts) if formatted_parts else json.dumps(result, indent=2)
+    
+    def _format_countermeasures_list(self, result: Dict[str, Any], original_query: str = None) -> str:
+        """Format countermeasures list result, grouped by phase"""
+        # SD Elements API returns countermeasures in a "results" array
+        countermeasures = result.get("results", [])
+        if not countermeasures:
+            return "No countermeasures found."
+        
+        # Group by phase
+        by_phase = {}
+        for cm in countermeasures:
+            phase = cm.get("phase", "Unknown")
+            if phase not in by_phase:
+                by_phase[phase] = []
+            by_phase[phase].append(cm)
+        
+        # Check if user requested specific fields (e.g., "task id and task title")
+        query_lower = (original_query or "").lower()
+        summarize_by_phase = "summarize" in query_lower and "phase" in query_lower
+        show_only_id_title = ("task id" in query_lower or "task_id" in query_lower) and ("task title" in query_lower or "title" in query_lower)
+        
+        # Build response header
+        if summarize_by_phase:
+            response = f"Summary of {len(countermeasures)} task(s) from the project, grouped by phase:\n\n"
+        else:
+            response = f"Found {len(countermeasures)} countermeasure(s), grouped by phase:\n\n"
+        
+        # Sort phases
+        sorted_phases = sorted(by_phase.keys())
+        for phase in sorted_phases:
+            cms = by_phase[phase]
+            response += f"**Phase {phase}** ({len(cms)} task(s)):\n"
+            for cm in cms:
+                task_id = cm.get("id", cm.get("task_id", "Unknown"))
+                title = cm.get("title", "Unknown")
+                
+                # Format based on user request
+                if show_only_id_title or summarize_by_phase:
+                    # Show only task ID and title as requested
+                    response += f"  - Task ID: {task_id}, Title: {title}\n"
+                else:
+                    # Default format
+                    response += f"  - {task_id}: {title}\n"
+            response += "\n"
+        
+        return response.strip()
+    
+    def _format_countermeasure_details(self, result: Dict[str, Any]) -> str:
+        """Format countermeasure details result"""
+        # Check if result is a countermeasure object or wrapped
+        if "id" in result or "task_id" in result:
+            cm = result
+        elif "countermeasure" in result:
+            cm = result.get("countermeasure", {})
+        else:
+            return "Countermeasure not found."
+        
+        task_id = cm.get("id", cm.get("task_id", "Unknown"))
+        title = cm.get("title", "Unknown")
+        phase = cm.get("phase", "")
+        status = cm.get("status", "")
+        
+        response = f"Countermeasure: {task_id} - {title}"
+        if phase:
+            response += f"\nPhase: {phase}"
+        if status:
+            response += f"\nStatus: {status}"
+        
+        return response
 
