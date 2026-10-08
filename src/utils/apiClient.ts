@@ -1225,12 +1225,23 @@ export class SDElementsClient {
               ? String(answerData.question)
               : null;
 
-        // Extract question text from display_text if available
+        // Extract question text AND answer text from display_text if available
         const displayText = answerData.display_text || "";
         let questionTextFromDisplay = "";
+        let answerTextFromDisplay = "";
+        
         if (displayText.includes(" - ")) {
-          questionTextFromDisplay = displayText.split(" - ")[0];
+          const parts = displayText.split(" - ");
+          questionTextFromDisplay = parts[0] || "";
+          // Join remaining parts in case answer text contains " - "
+          answerTextFromDisplay = parts.slice(1).join(" - ") || "";
+        } else if (displayText) {
+          // If display_text exists but doesn't contain " - ", use it as question text
+          questionTextFromDisplay = displayText;
         }
+
+        // Use extracted answer text from display_text, fallback to answerData.text
+        const answerText = answerTextFromDisplay || answerData.text || "";
 
         const answerInfo: {
           id: string;
@@ -1246,7 +1257,7 @@ export class SDElementsClient {
           section_id: string | null;
         } = {
           id: answerId,
-          text: answerData.text || "",
+          text: answerText,
           question_id: questionId,
           question_text: questionTextFromDisplay,
           question_description: "",

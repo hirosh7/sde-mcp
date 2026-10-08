@@ -310,6 +310,222 @@ describe("SDElementsClient.request (via public methods)", () => {
     expect(res).toEqual({ data: [{ ok: 1 }] });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  describe("getAnswerDetailsFromIds", () => {
+    it("extracts answer text from display_text field when available", async () => {
+      const client = new SDElementsClient({
+        host: "https://example.test",
+        apiKey: "abc",
+        timeout: 1000,
+      });
+
+      // Mock loadLibraryAnswers to populate cache
+      const libraryAnswersResponse = {
+        count: 3,
+        next: null,
+        previous: null,
+        results: [
+          {
+            id: "A1061",
+            text: "Set of default answers for software profiles",
+            question: "Q1",
+            display_text:
+              "Internal Properties (Use this, for all hidden answers) - Set of default answers for software profiles",
+            description: "",
+          },
+          {
+            id: "A740",
+            text: "This is a new project",
+            question: "Q2",
+            display_text:
+              "Internal Properties (Use this, for all hidden answers) - This is a new project",
+            description: "",
+          },
+          {
+            id: "A1078",
+            text: "Uses a database",
+            question: "Q3",
+            display_text: "Components In Use - Uses a database",
+            description: "",
+          },
+        ],
+      };
+
+      mockFetchOnce(async (url: string) => {
+        if (url.includes("/api/v2/library/answers/")) {
+          return new Response(JSON.stringify(libraryAnswersResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        // Mock library question endpoint
+        if (url.includes("/api/v2/library/questions/")) {
+          const questionId = url.match(/questions\/([^/]+)/)?.[1];
+          return new Response(
+            JSON.stringify({
+              id: questionId,
+              text: questionId === "Q1" 
+                ? "Internal Properties (Use this, for all hidden answers)"
+                : questionId === "Q2"
+                ? "Internal Properties (Use this, for all hidden answers)"
+                : "Components In Use",
+              description: "",
+              format: "choice",
+              mandatory: false,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 404 });
+      });
+
+      const result = await client.getAnswerDetailsFromIds([
+        "A1061",
+        "A740",
+        "A1078",
+      ]);
+
+      expect(result.answers).toHaveLength(3);
+      expect(result.not_found).toHaveLength(0);
+
+      // Verify A1061
+      const a1061 = result.answers.find((a) => a.id === "A1061");
+      expect(a1061).toBeDefined();
+      expect(a1061?.text).toBe("Set of default answers for software profiles");
+      expect(a1061?.question_text).toBe(
+        "Internal Properties (Use this, for all hidden answers)"
+      );
+
+      // Verify A740
+      const a740 = result.answers.find((a) => a.id === "A740");
+      expect(a740).toBeDefined();
+      expect(a740?.text).toBe("This is a new project");
+      expect(a740?.question_text).toBe(
+        "Internal Properties (Use this, for all hidden answers)"
+      );
+
+      // Verify A1078
+      const a1078 = result.answers.find((a) => a.id === "A1078");
+      expect(a1078).toBeDefined();
+      expect(a1078?.text).toBe("Uses a database");
+      expect(a1078?.question_text).toBe("Components In Use");
+    });
+
+    it("falls back to answerData.text when display_text doesn't contain ' - '", async () => {
+      const client = new SDElementsClient({
+        host: "https://example.test",
+        apiKey: "abc",
+        timeout: 1000,
+      });
+
+      const libraryAnswersResponse = {
+        count: 1,
+        next: null,
+        previous: null,
+        results: [
+          {
+            id: "A1",
+            text: "Java",
+            question: "Q1",
+            display_text: "Programming Language",
+            description: "",
+          },
+        ],
+      };
+
+      mockFetchOnce(async (url: string) => {
+        if (url.includes("/api/v2/library/answers/")) {
+          return new Response(JSON.stringify(libraryAnswersResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/v2/library/questions/")) {
+          return new Response(
+            JSON.stringify({
+              id: "Q1",
+              text: "Programming Language",
+              description: "",
+              format: "choice",
+              mandatory: false,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 404 });
+      });
+
+      const result = await client.getAnswerDetailsFromIds(["A1"]);
+
+      expect(result.answers).toHaveLength(1);
+      const a1 = result.answers[0];
+      expect(a1.id).toBe("A1");
+      expect(a1.text).toBe("Java"); // Should use answerData.text as fallback
+      expect(a1.question_text).toBe("Programming Language");
+    });
+
+    it("handles answer text that contains ' - ' in the text", async () => {
+      const client = new SDElementsClient({
+        host: "https://example.test",
+        apiKey: "abc",
+        timeout: 1000,
+      });
+
+      const libraryAnswersResponse = {
+        count: 1,
+        next: null,
+        previous: null,
+        results: [
+          {
+            id: "A47",
+            text: "Java EE",
+            question: "Q1",
+            display_text: "Technology/Framework - Java EE",
+            description: "",
+          },
+        ],
+      };
+
+      mockFetchOnce(async (url: string) => {
+        if (url.includes("/api/v2/library/answers/")) {
+          return new Response(JSON.stringify(libraryAnswersResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/v2/library/questions/")) {
+          return new Response(
+            JSON.stringify({
+              id: "Q1",
+              text: "Technology/Framework",
+              description: "",
+              format: "choice",
+              mandatory: false,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 404 });
+      });
+
+      const result = await client.getAnswerDetailsFromIds(["A47"]);
+
+      expect(result.answers).toHaveLength(1);
+      const a47 = result.answers[0];
+      expect(a47.id).toBe("A47");
+      expect(a47.text).toBe("Java EE");
+      expect(a47.question_text).toBe("Technology/Framework");
+    });
+  });
 });
 
 

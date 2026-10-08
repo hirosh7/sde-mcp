@@ -1,5 +1,6 @@
 """Mock Seaglass Service - Simulates Seaglass for prototype testing"""
 import os
+import logging
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,14 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Mock Seaglass Service")
 
@@ -24,11 +33,13 @@ MCP_PROXY_URL = os.getenv("MCP_PROXY_URL", "http://localhost:8002")
 
 class NLQueryRequest(BaseModel):
     query: str
+    session_id: str | None = None
 
 
 class NLQueryResponse(BaseModel):
     response: str
     success: bool
+    session_id: str | None = None
     error: str | None = None
 
 
@@ -56,37 +67,57 @@ async def get_sde_instance():
 
 @app.post("/api/v1/nlquery", response_model=NLQueryResponse)
 async def natural_language_query(request: NLQueryRequest):
-    """Forward natural language query to MCP Proxy"""
+    """Forward natural language query to MCP Proxy with session context"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
+            # Forward session_id if provided
+            payload = {"query": request.query}
+            if request.session_id:
+                payload["session_id"] = request.session_id
+                logger.info(f"[Mock-Seaglass] Received session_id: {request.session_id}, forwarding to MCP Proxy")
+            else:
+                logger.warning(f"[Mock-Seaglass] No session_id provided in request")
+            
+            logger.debug(f"[Mock-Seaglass] Forwarding payload: {payload}")
             response = await client.post(
                 f"{MCP_PROXY_URL}/api/v1/query",
-                json={"query": request.query}
+                json=payload
             )
             response.raise_for_status()
             data = response.json()
             return NLQueryResponse(
                 response=data.get("response", ""),
                 success=data.get("success", False),
+                session_id=data.get("session_id"),
                 error=data.get("error")
             )
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+        # Try to extract session_id from error response if available
+        session_id_from_error = None
+        try:
+            error_data = e.response.json()
+            session_id_from_error = error_data.get("session_id")
+        except Exception:
+            pass
         return NLQueryResponse(
             response="",
             success=False,
+            session_id=session_id_from_error or request.session_id,
             error=error_msg
         )
     except httpx.TimeoutException:
         return NLQueryResponse(
             response="",
             success=False,
+            session_id=request.session_id,  # Preserve session_id even on timeout
             error="Request timeout - MCP Proxy service did not respond in time"
         )
     except Exception as e:
         return NLQueryResponse(
             response="",
             success=False,
+            session_id=request.session_id,  # Preserve session_id even on error
             error=str(e)
         )
 
