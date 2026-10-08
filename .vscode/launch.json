@@ -1,0 +1,67 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Sample Streamable HTTP Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/sde_mcp_server/streamable_http_server/sample_server.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: Sample Claude Client",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/sde_mcp_server/streamable_http_server/sample_claude_client..py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "preLaunchTask": "Start MCP Server",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: SD Elements Streamable HTTP Server",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "sde_mcp_server",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: SD Elements Client",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/sde_mcp_server/streamable_http_server/sde_client.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "preLaunchTask": "Start SD Elements MCP Server",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Python: Server + Client (Sequential)",
+            "configurations": [
+                "Python: Sample Streamable HTTP Server",
+                "Python: Sample Claude Client"
+            ],
+            "preLaunchTask": "Start MCP Server",
+            "stopAll": true
+        }
+    ]
+}
+

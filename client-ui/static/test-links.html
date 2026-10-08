@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>URL Linkification Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-case {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .input {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 3px solid #667eea;
+        }
+        .output {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 3px solid #4caf50;
+            line-height: 1.6;
+        }
+        .output a {
+            color: #667eea;
+            text-decoration: none;
+            border-bottom: 1px solid #667eea;
+        }
+        .output a:hover {
+            color: #764ba2;
+            border-color: #764ba2;
+        }
+        h3 { margin-top: 0; }
+        label { font-weight: bold; color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>URL Linkification Test</h1>
+    <p>This page tests the <code>linkifyUrls()</code> function from app.js</p>
+    
+    <div id="test-cases"></div>
+    
+    <script>
+        function linkifyUrls(text) {
+            // Escape HTML to prevent XSS
+            const escapeHtml = (str) => {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            };
+            
+            // Split by URLs and rebuild with links
+            const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+            const parts = text.split(urlRegex);
+            
+            // Create a non-global regex for testing individual parts
+            const urlTest = /^https?:\/\/[^\s<>"']+$/;
+            
+            return parts.map(part => {
+                if (urlTest.test(part)) {
+                    // Clean up URL - remove trailing punctuation that might not be part of URL
+                    const cleanUrl = part.replace(/[.,;!?]+$/, '');
+                    const trailingPunct = part.slice(cleanUrl.length);
+                    return `<a href="${escapeHtml(cleanUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cleanUrl)}</a>${escapeHtml(trailingPunct)}`;
+                }
+                return escapeHtml(part);
+            }).join('');
+        }
+        
+        const testCases = [
+            {
+                title: "Simple URL",
+                input: "Visit https://example.com for more info"
+            },
+            {
+                title: "Multiple URLs",
+                input: "Check https://example.com and https://test.com for details"
+            },
+            {
+                title: "URL with punctuation",
+                input: "Go to https://example.com. Thanks!"
+            },
+            {
+                title: "SD Elements Project URL",
+                input: "Project URL: https://sde-ent-onyxdrift.sdelab.net/bunits/ocean-freight/customer-portal/mill-grinder/"
+            },
+            {
+                title: "URL with query parameters",
+                input: "Search: https://example.com/search?q=test&lang=en"
+            },
+            {
+                title: "URL at end with punctuation",
+                input: "Created at https://example.com/project/123!"
+            },
+            {
+                title: "No URLs",
+                input: "This text has no URLs in it"
+            }
+        ];
+        
+        const container = document.getElementById('test-cases');
+        
+        testCases.forEach((test, index) => {
+            const testDiv = document.createElement('div');
+            testDiv.className = 'test-case';
+            
+            const html = linkifyUrls(test.input);
+            
+            testDiv.innerHTML = `
+                <h3>Test ${index + 1}: ${test.title}</h3>
+                <label>Input:</label>
+                <div class="input">${test.input}</div>
+                <label>Output (clickable links):</label>
+                <div class="output">${html}</div>
+            `;
+            
+            container.appendChild(testDiv);
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,128 @@
+"""Mock Seaglass Service - Simulates Seaglass for prototype testing"""
+import os
+import logging
+import httpx
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configure logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Mock Seaglass Service")
+
+# Enable CORS for web UI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+MCP_PROXY_URL = os.getenv("MCP_PROXY_URL", "http://localhost:8002")
+
+
+class NLQueryRequest(BaseModel):
+    query: str
+    session_id: str | None = None
+
+
+class NLQueryResponse(BaseModel):
+    response: str
+    success: bool
+    session_id: str | None = None
+    error: str | None = None
+
+
+@app.get("/api/v1/health")
+async def health():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "mock-seaglass"}
+
+
+@app.get("/api/v1/sde-instance")
+async def get_sde_instance():
+    """Get SDE instance information"""
+    try:
+        # Try to get SDE instance info from MCP proxy
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{MCP_PROXY_URL}/api/v1/sde-instance")
+            if response.status_code == 200:
+                return response.json()
+    except Exception:
+        pass
+    
+    # Fallback: return unknown
+    return {"instance_name": "Unknown", "instance_url": "Unknown"}
+
+
+@app.post("/api/v1/nlquery", response_model=NLQueryResponse)
+async def natural_language_query(request: NLQueryRequest):
+    """Forward natural language query to MCP Proxy with session context"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Forward session_id if provided
+            payload = {"query": request.query}
+            if request.session_id:
+                payload["session_id"] = request.session_id
+                logger.info(f"[Mock-Seaglass] Received session_id: {request.session_id}, forwarding to MCP Proxy")
+            else:
+                logger.warning(f"[Mock-Seaglass] No session_id provided in request")
+            
+            logger.debug(f"[Mock-Seaglass] Forwarding payload: {payload}")
+            response = await client.post(
+                f"{MCP_PROXY_URL}/api/v1/query",
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            return NLQueryResponse(
+                response=data.get("response", ""),
+                success=data.get("success", False),
+                session_id=data.get("session_id"),
+                error=data.get("error")
+            )
+    except httpx.HTTPStatusError as e:
+        error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+        # Try to extract session_id from error response if available
+        session_id_from_error = None
+        try:
+            error_data = e.response.json()
+            session_id_from_error = error_data.get("session_id")
+        except Exception:
+            pass
+        return NLQueryResponse(
+            response="",
+            success=False,
+            session_id=session_id_from_error or request.session_id,
+            error=error_msg
+        )
+    except httpx.TimeoutException:
+        return NLQueryResponse(
+            response="",
+            success=False,
+            session_id=request.session_id,  # Preserve session_id even on timeout
+            error="Request timeout - MCP Proxy service did not respond in time"
+        )
+    except Exception as e:
+        return NLQueryResponse(
+            response="",
+            success=False,
+            session_id=request.session_id,  # Preserve session_id even on error
+            error=str(e)
+        )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8003)
+

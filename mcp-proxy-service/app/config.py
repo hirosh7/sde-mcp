@@ -1,0 +1,42 @@
+"""Configuration management for MCP Proxy Service"""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    """Application configuration"""
+    # MCP Server URL
+    MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8001/mcp")
+    
+    # Anthropic API
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    # Single source of truth for the default model ID. Change it here only.
+    DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5"
+    # Empty values fall back to the default (compose passes unset vars as empty)
+    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
+    # Tool selection model (can be different from formatting model for cost optimization)
+    # Defaults to same as CLAUDE_MODEL if not specified
+    CLAUDE_TOOL_SELECTION_MODEL = os.getenv("CLAUDE_TOOL_SELECTION_MODEL") or CLAUDE_MODEL
+    
+    # Performance
+    ENABLE_TIMING = os.getenv("ENABLE_TIMING", "false").lower() in ("true", "1", "yes")
+    
+    # Logging
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+    
+    # Server
+    HOST = os.getenv("HOST", "0.0.0.0")
+    PORT = int(os.getenv("PORT", "8002"))
+    
+    # Redis Configuration
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+    SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
+    SESSION_MAX_CONVERSATIONS = int(os.getenv("SESSION_MAX_CONVERSATIONS", "50"))
+    
+    @classmethod
+    def validate(cls):
+        """Validate required configuration"""
+        if not cls.ANTHROPIC_API_KEY:
+            raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+
