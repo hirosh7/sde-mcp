@@ -11,12 +11,13 @@ class Config:
     
     # Anthropic API
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    # Default to Sonnet 5.5 for both formatting and tool selection (better context understanding)
-    _claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
-    CLAUDE_MODEL = _claude_model
+    # Single source of truth for the default model ID. Change it here only.
+    DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5"
+    # Empty values fall back to the default (compose passes unset vars as empty)
+    CLAUDE_MODEL = os.getenv("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
     # Tool selection model (can be different from formatting model for cost optimization)
     # Defaults to same as CLAUDE_MODEL if not specified
-    CLAUDE_TOOL_SELECTION_MODEL = os.getenv("CLAUDE_TOOL_SELECTION_MODEL", _claude_model)
+    CLAUDE_TOOL_SELECTION_MODEL = os.getenv("CLAUDE_TOOL_SELECTION_MODEL") or CLAUDE_MODEL
     
     # Performance
     ENABLE_TIMING = os.getenv("ENABLE_TIMING", "false").lower() in ("true", "1", "yes")
