@@ -11,9 +11,8 @@ class Config:
     
     # Anthropic API
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    # Default to Sonnet 4.5 for both formatting and tool selection (better context understanding)
-    # Claude 4.5 Sonnet format: claude-sonnet-4-5-YYYYMMDD (note: different from 3.5 format)
-    _claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+    # Default to Sonnet 5.5 for both formatting and tool selection (better context understanding)
+    _claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
     CLAUDE_MODEL = _claude_model
     # Tool selection model (can be different from formatting model for cost optimization)
     # Defaults to same as CLAUDE_MODEL if not specified

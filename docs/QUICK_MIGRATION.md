@@ -63,7 +63,7 @@ docker-compose logs mcp-proxy | grep -i "Connected to Redis"
 4. Verify the second query understands context from the first
 
 **Tested Configuration:**
-- Claude Model: `claude-sonnet-4-5-20250929`
+- Claude Model: `claude-sonnet-5-5`
 - Browser: Chrome (latest)
 
 ## Rollback
