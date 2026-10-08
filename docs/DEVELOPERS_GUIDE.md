@@ -29,7 +29,7 @@ cp env.example .env
 # - SDE_HOST=https://your-instance.sdelements.com
 # - SDE_API_KEY=your-sde-api-key-here
 # - ANTHROPIC_API_KEY=your-anthropic-api-key-here
-# - CLAUDE_MODEL=claude-3-5-haiku-20241022 (optional)
+# - CLAUDE_MODEL (optional, default: DEFAULT_CLAUDE_MODEL in mcp-proxy-service/app/config.py)
 ```
 
 ### Run with Docker Compose
@@ -59,7 +59,7 @@ npm start
 cd mcp-proxy-service
 export MCP_SERVER_URL=http://localhost:8001/mcp
 export ANTHROPIC_API_KEY=your-key
-export CLAUDE_MODEL=claude-3-5-haiku-20241022
+export CLAUDE_MODEL=<model-id>   # optional override
 uvicorn app.main:app --host 0.0.0.0 --port 8002
 
 # Terminal 3: Start Mock Seaglass

@@ -14,7 +14,7 @@ This guide helps you migrate from the version without context retention to the v
 - Conversation history tracking
 
 **Tested Configuration:**
-- **Claude Model**: `claude-sonnet-4-5-20250929`
+- **Claude Model**: `claude-sonnet-5-5`
 - **Browser**: Chrome (latest)
 - **Session Storage**: Redis 7-alpine
 
@@ -204,7 +204,7 @@ docker-compose logs mcp-proxy | grep -i redis
    ```
 
 **Note**: This migration guide was tested with:
-- Claude model: `claude-sonnet-4-5-20250929`
+- Claude model: `claude-sonnet-5-5`
 - Browser: Chrome (latest version)
 - Redis: 7-alpine
 
@@ -376,7 +376,7 @@ docker-compose up -d
 - [ ] Redis data persists after service restart
 
 **Tested Environment:**
-- **Claude Model**: `claude-sonnet-4-5-20250929`
+- **Claude Model**: `claude-sonnet-5-5`
 - **Browser**: Chrome (latest version)
 - **Session Storage**: Redis 7-alpine
 

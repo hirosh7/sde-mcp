@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class ClaudeToolSelector:
     """Uses Claude to select the appropriate tool for a natural language query"""
     
-    def __init__(self, api_key: str, model: str = "claude-3-5-haiku-20241022", tool_selection_model: str = None):
+    def __init__(self, api_key: str, model: str, tool_selection_model: str = None):
         self.anthropic = Anthropic(api_key=api_key)
         self.model = model
         # Use separate model for tool selection if specified, otherwise use same model

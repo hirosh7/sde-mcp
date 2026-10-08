@@ -73,7 +73,7 @@ Set environment variables:
 
 - `MCP_SERVER_URL`: URL of the MCP server (default: `http://localhost:8001/mcp`)
 - `ANTHROPIC_API_KEY`: Anthropic API key (required)
-- `CLAUDE_MODEL`: Claude model to use (default: `claude-3-5-haiku-20241022`)
+- `CLAUDE_MODEL`: Claude model to use (default: `DEFAULT_CLAUDE_MODEL` in `app/config.py`)
 - `ENABLE_TIMING`: Enable timing output (default: `false`)
 - `HOST`: Server host (default: `0.0.0.0`)
 - `PORT`: Server port (default: `8002`)

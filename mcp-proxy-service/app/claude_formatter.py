@@ -8,7 +8,7 @@ from anthropic import Anthropic
 class ClaudeResponseFormatter:
     """Uses Claude to format tool results into natural language"""
     
-    def __init__(self, api_key: str, model: str = "claude-3-5-haiku-20241022", timeout: float = 10.0):
+    def __init__(self, api_key: str, model: str, timeout: float = 10.0):
         self.anthropic = Anthropic(api_key=api_key)
         self.model = model
         self.timeout = timeout

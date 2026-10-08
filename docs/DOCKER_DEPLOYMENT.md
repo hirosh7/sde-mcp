@@ -104,7 +104,7 @@ Required environment variables (set in `.env` or docker-compose):
 Optional:
 - `PORT` - HTTP server port (default: 8001)
 - `HOST` - HTTP server host (default: 0.0.0.0)
-- `CLAUDE_MODEL` - Claude model to use (default: claude-3-5-haiku-20241022)
+- `CLAUDE_MODEL` - Claude model to use (default: DEFAULT_CLAUDE_MODEL in mcp-proxy-service/app/config.py)
 
 ## Architecture
 

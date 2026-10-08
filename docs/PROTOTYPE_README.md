@@ -45,8 +45,8 @@ SDE_API_KEY=your-sde-api-key-here
 # Anthropic API (for Claude)
 ANTHROPIC_API_KEY=your-anthropic-api-key-here
 
-# Optional: Claude model (defaults to claude-3-5-haiku-20241022)
-CLAUDE_MODEL=claude-3-5-haiku-20241022
+# Optional: Claude model (default: DEFAULT_CLAUDE_MODEL in mcp-proxy-service/app/config.py)
+# CLAUDE_MODEL=
 
 # Optional: Enable timing output
 ENABLE_TIMING=false
