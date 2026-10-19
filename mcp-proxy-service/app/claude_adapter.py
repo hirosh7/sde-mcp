@@ -4,6 +4,8 @@ import logging
 from typing import Tuple, Optional, List, Dict
 from anthropic import Anthropic
 
+from app.prompt_cache import mark_last_turn_for_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,14 +50,14 @@ class ClaudeToolSelector:
                     "content": conv.get("response", "")
                 })
         
-        # Format tools for Claude
+        # Format tools for Claude. The list is the same on every call, so it goes in
+        # the cached system prompt rather than in the per-query user turn.
         tools_description = self._format_tools_for_claude(available_tools)
         
+        mark_last_turn_for_cache(messages)
+        
         # Add current query
-        user_prompt = f"""Available tools:
-{tools_description}
-
-User query: {query}
+        user_prompt = f"""User query: {query}
 
 Respond with JSON only:"""
         
@@ -131,7 +133,14 @@ CRITICAL TOOL SELECTION RULES:
             response = self.anthropic.messages.create(
                 model=self.tool_selection_model,
                 max_tokens=1000,
-                system=system_prompt,
+                system=[
+                    {"type": "text", "text": system_prompt},
+                    {
+                        "type": "text",
+                        "text": f"Available tools:\n{tools_description}",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                ],
                 messages=messages
             )
             
