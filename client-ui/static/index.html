@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seaglass SDE MCP Natural Language Interface</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Seaglass SDE MCP Natural Language Interface</h1>
+            <div id="instance-info" class="instance-info">
+                <span class="instance-label">Instance:</span>
+                <a id="instance-name" href="#" target="_blank" rel="noopener noreferrer">Loading...</a>
+            </div>
+        </div>
+        <div id="chat-container">
+            <div id="messages"></div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="query-input" placeholder="Enter your query (e.g., 'List all projects')..." />
+            <button id="send-btn">Send</button>
+        </div>
+        <div class="examples">
+            <h3>Example Queries:</h3>
+            <ul>
+                <li><a href="#" class="example-query">List all Projects</a></li>
+                <li><a href="#" class="example-query">Show me projects created this month</a></li>
+                <li><a href="#" class="example-query">Show me all Business Units</a></li>
+                <li><a href="#" class="example-query">Show me all applications</a></li>
+            </ul>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
+

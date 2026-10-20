@@ -133,6 +133,85 @@ export function registerProjectTools(
     }
   );
 
+  // Get profile
+  server.registerTool(
+    "get_profile",
+    {
+      title: "Get Profile",
+      description:
+        "Get details of a specific profile including its associated answer IDs converted to question and answer text. Returns profile information along with human-readable question/answer pairs for all answers associated with the profile.",
+      inputSchema: z.object({
+        profile_id: z.string().describe("ID of the profile (e.g., 'P2', 'mobile', 'web')"),
+        project_id: z
+          .number()
+          .optional()
+          .describe(
+            "Optional project ID. If provided, will include section_title and section_id for each answer by looking up the answer in the project's survey structure."
+          ),
+        include_answer_details: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe(
+            "Whether to include question and answer text details for profile answers. If false, only returns answer IDs."
+          ),
+      }),
+    },
+    async ({ profile_id, project_id, include_answer_details = true }) => {
+      const profile = await client.getProfile(profile_id);
+
+      const result: Record<string, unknown> = {
+        id: profile.id,
+        name: profile.name,
+        description: profile.description,
+        default: profile.default,
+      };
+
+      // Extract answer IDs from profile
+      // Profile API may return answers in different formats
+      const profileData = profile as Record<string, unknown>;
+      let answerIds: string[] = [];
+
+      // Check various possible fields where answer IDs might be stored
+      if (Array.isArray(profileData.answers)) {
+        answerIds = profileData.answers as string[];
+      } else if (Array.isArray(profileData.answer_ids)) {
+        answerIds = profileData.answer_ids as string[];
+      } else if (typeof profileData.answers === "string") {
+        // If answers is a comma-separated string
+        answerIds = (profileData.answers as string).split(",").map((id) => id.trim());
+      }
+
+      result.answer_ids = answerIds;
+
+      // Convert answer IDs to question/answer text if requested
+      if (include_answer_details && answerIds.length > 0) {
+        try {
+          const answerDetails = await client.getAnswerDetailsFromIds(
+            answerIds,
+            project_id
+          );
+
+          result.answer_details = answerDetails.answers.map((answer) => ({
+            answer_id: answer.id,
+            question_text: answer.question_text,
+            answer_text: answer.text,
+            section_title: answer.section_title,
+            section_id: answer.section_id,
+            formatted: `${answer.id}: ${answer.question_text} - ${answer.text}`,
+          }));
+
+          result.not_found_answers = answerDetails.not_found;
+        } catch (error) {
+          result.answer_details_error =
+            error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      return jsonToolResult(result);
+    }
+  );
+
   // List risk policies
   server.registerTool(
     "list_risk_policies",
@@ -176,7 +255,7 @@ export function registerProjectTools(
     {
       title: "Create Project",
       description:
-        "Create a new project in SD Elements. If name is not specified, prompts user to provide it. If profile is not specified, attempts to detect it from project name/description (e.g., 'mobile project' → Mobile profile). If detection fails, prompts user to select from available profiles.",
+        "Create a new project in SD Elements. If name is not specified, prompts user to provide it. If profile_id is not specified, attempts to detect it from project name/description (e.g., 'mobile project' → Mobile profile). If detection fails, prompts user to select from available profiles.",
       inputSchema: z.object({
         application_id: z.number().describe("ID of the application"),
         name: z.string().optional().describe("Name of the project"),
@@ -189,11 +268,40 @@ export function registerProjectTools(
       }),
     },
     async ({ application_id, name, description, phase_id, profile_id }) => {
-      // For now, name and profile_id are required (elicitation not implemented yet)
-      if (!name) {
-        return jsonToolResult({
-          error: "Project name is required. Please provide the 'name' parameter.",
-        });
+      let resolvedName = name;
+      
+      // Elicit project name if not provided
+      if (!resolvedName) {
+        try {
+          const nameResult = await server.server.elicitInput({
+            message: "What is the name of the project you want to create?",
+            requestedSchema: {
+              type: "object",
+              properties: {
+                name: {
+                  type: "string",
+                  title: "Project Name",
+                  description: "The name of the project",
+                }
+              },
+              required: ["name"]
+            }
+          });
+          
+          if (nameResult.action === "accept" && nameResult.content?.name) {
+            resolvedName = nameResult.content.name as string;
+          } else {
+            return jsonToolResult({
+              error: "Project creation cancelled: project name is required",
+            });
+          }
+        } catch (error) {
+          // Elicitation not supported or failed
+          return jsonToolResult({
+            error: "Project name is required. Please provide the 'name' parameter.",
+            details: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       let resolvedProfileId = profile_id;
@@ -212,7 +320,7 @@ export function registerProjectTools(
 
         // Try to detect profile
         const detectedProfileId = detectProfileFromContext(
-          name,
+          resolvedName,
           description || "",
           profiles
         );
@@ -220,21 +328,64 @@ export function registerProjectTools(
         if (detectedProfileId) {
           resolvedProfileId = detectedProfileId;
         } else {
-          // Use default profile if available
+          // Try to use default profile or prompt user
           const defaultProfile = profiles.find((p) => p.default);
+          
           if (defaultProfile) {
             resolvedProfileId = defaultProfile.id;
           } else {
-            return jsonToolResult({
-              error: "Profile is required. Please provide the 'profile_id' parameter.",
-              available_profiles: profiles.map((p) => ({ id: p.id, name: p.name })),
-            });
+            // Prompt user to select a profile
+            try {
+              const profileOptions = profiles.map(p => p.name);
+              const profileIdMap: Record<string, string> = {};
+              profiles.forEach(p => {
+                profileIdMap[p.name] = p.id;
+              });
+              
+              const profileResult = await server.server.elicitInput({
+                message: "Select a profile for the project:",
+                requestedSchema: {
+                  type: "object",
+                  properties: {
+                    profile: {
+                      type: "string",
+                      title: "Profile",
+                      description: "Select the security profile for this project",
+                      enum: profileOptions,
+                    }
+                  },
+                  required: ["profile"]
+                }
+              });
+              
+              if (profileResult.action === "accept" && profileResult.content?.profile) {
+                const selectedProfile = profileResult.content.profile as string;
+                resolvedProfileId = profileIdMap[selectedProfile];
+                
+                if (!resolvedProfileId) {
+                  return jsonToolResult({
+                    error: `Could not find profile ID for selection: ${selectedProfile}`,
+                  });
+                }
+              } else {
+                return jsonToolResult({
+                  error: "Project creation cancelled: profile selection is required",
+                });
+              }
+            } catch (error) {
+              // Elicitation not supported or failed
+              return jsonToolResult({
+                error: "Profile is required. Please provide the 'profile_id' parameter.",
+                available_profiles: profiles.map((p) => ({ id: p.id, name: p.name })),
+                details: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
       }
 
       const data: Record<string, unknown> = {
-        name,
+        name: resolvedName,
         application: application_id,
       };
 
