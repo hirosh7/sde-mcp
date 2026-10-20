@@ -4,6 +4,8 @@ import asyncio
 from typing import Any, Dict, Optional, List
 from anthropic import Anthropic
 
+from app.prompt_cache import mark_last_turn_for_cache
+
 
 class ClaudeResponseFormatter:
     """Uses Claude to format tool results into natural language"""
@@ -45,6 +47,8 @@ class ClaudeResponseFormatter:
                     "role": "assistant",
                     "content": conv.get("response", "")
                 })
+        
+        mark_last_turn_for_cache(messages)
         
         # Add current formatting request
         result_json = json.dumps(result, indent=2)
